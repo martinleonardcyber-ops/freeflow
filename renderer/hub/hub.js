@@ -525,11 +525,17 @@
     const wanted = state ? state.settings.aiModel : '';
     sel.innerHTML = '<option value="">Automatique</option>' + (st.models || []).map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
     sel.value = (st.models || []).includes(wanted) ? wanted : '';
-    $('#ai-status').textContent = st.endpoint
-      ? `${st.endpoint.replace(/^https?:\/\//, '').replace(/\/v1$/, '')} · ${st.model || 'aucun modèle'}${sel.value ? '' : ' (auto)'}`
-      : 'Aucun serveur local trouvé : lance LM Studio (ou Ollama) et charge un modèle.';
+    const host = (u) => u.replace(/^https?:\/\//, '').replace(/\/v1$/, '');
+    $('#ai-status').textContent = st.pinned
+      ? `Envoie uniquement à ${host(st.pinned)}${st.endpoint ? ` · ${st.model || 'aucun modèle'}${sel.value ? '' : ' (auto)'}` : ' (ne répond pas : LM Studio est-il lancé ?)'}`
+      : st.endpoint ? `Serveur trouvé : ${host(st.endpoint)} · ${st.model || 'aucun modèle'}. Il sera retenu à l’activation.` : 'Aucun serveur local trouvé : lance LM Studio (ou Ollama) et charge un modèle.';
   }
-  $('#set-ai').addEventListener('change', async (e) => { await ff.invoke('ff:set-settings', { aiFormat: e.target.checked }); if (e.target.checked) toast('Mise en forme IA activée'); });
+  $('#set-ai').addEventListener('change', async (e) => {
+    const r = await ff.invoke('ff:set-settings', { aiFormat: e.target.checked });
+    if (r && r.aiError) { e.target.checked = false; toast(r.aiError, 'error'); }
+    else if (e.target.checked) toast('Mise en forme IA activée');
+    refreshAi();
+  });
   $('#set-aimodel').addEventListener('change', async (e) => { await ff.invoke('ff:set-settings', { aiModel: e.target.value }); refreshAi(); });
   $('#ai-test-btn').addEventListener('click', async () => {
     const out = $('#ai-test-out'), btn = $('#ai-test-btn');

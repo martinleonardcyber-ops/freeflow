@@ -43,7 +43,7 @@ const DEFAULT_SETTINGS = {
   flowBar: true,                // small pill always visible at the bottom of the screen
   aiFormat: false,              // clean-up by a LOCAL language model (LM Studio...), rules as fallback
   aiModel: '',                  // '' = pick one automatically
-  aiEndpoint: '',               // '' = find a local OpenAI-compatible server (ports 1234, 8080, 11434)
+  aiEndpoint: '',               // pinned when the option is switched on; dictations go only there
   fnOffered: false,             // macOS: the old Ctrl+Alt+Space default was switched to fn once
   vocabSeeded: false,           // default vocabulary (n8n, Higgsfield...) added once
 };
@@ -820,9 +820,20 @@ function applyTheme(theme) {
 // ---- IPC (hub) --------------------------------------------------------------
 ipcMain.handle('ff:get-state', () => buildState());
 
-ipcMain.handle('ff:set-settings', (_e, patch) => {
+ipcMain.handle('ff:set-settings', async (_e, patch) => {
+  patch = { ...(patch || {}) };
+  delete patch.aiEndpoint;          // pinned below, never from the renderer
+  if (patch.aiFormat === true && !settings.get().aiEndpoint) {
+    // Switching the option on pins the server found now (shown in the settings);
+    // later dictations never go to whatever else starts answering on those ports.
+    const found = await discover('', { fresh: true });
+    if (!found.endpoint) return { ...buildState(), aiError: 'Aucun serveur local trouvé : lance LM Studio (ou Ollama), puis réessaie.' };
+    patch.aiEndpoint = found.endpoint;
+    log(`ai format: server pinned ${found.endpoint}`);
+  }
+  if (patch.aiFormat === false) patch.aiEndpoint = '';
   const before = settings.get();
-  const next = settings.update(patch || {});
+  const next = settings.update(patch);
   if (next.shortcut !== before.shortcut || next.mode !== before.mode) registerShortcut();
   if (next.theme !== before.theme) applyTheme(next.theme);
   if (next.aiFormat && (!before.aiFormat || next.aiModel !== before.aiModel)) warmAi();
@@ -926,7 +937,7 @@ ipcMain.handle('ff:open-logs', () => shell.openPath(logDir));
 ipcMain.handle('ff:ai-status', async () => {
   const s = settings.get();
   const found = await discover(s.aiEndpoint, { fresh: true });
-  return { ...found, model: pickModel(found.models, s.aiModel) };
+  return { ...found, pinned: s.aiEndpoint || '', model: pickModel(found.models, s.aiModel) };
 });
 ipcMain.handle('ff:ai-test', async (_e, text) => {
   const s = settings.get();
