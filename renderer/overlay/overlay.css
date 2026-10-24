@@ -1,4 +1,4 @@
-/* Floating pill, modelled on Wispr Flow's bottom-center overlay. */
+/* Floating pill at the bottom of the screen: ink glass, iris→ember voice. */
 @font-face {
   font-family: 'Figtree';
   src: url('../../assets/fonts/figtree-2.woff2') format('woff2');
@@ -7,10 +7,15 @@
 }
 
 :root {
-  --pill-bg: #1a1a1a;
-  --cream: #ffffeb;
-  --red: #f87171;
-  --green: #86efac;
+  --ink: #121118;
+  --text: #f6f4fb;
+  --muted: rgba(246, 244, 251, 0.55);
+  --iris: #8b6cff;
+  --ember: #ff6a45;
+  --grad: linear-gradient(90deg, #8b6cff, #c25cf0 50%, #ff6a45);
+  --ok: #3ccf9e;
+  --bad: #ff6b70;
+  --warn: #ffb347;
 }
 
 html, body {
@@ -27,77 +32,95 @@ html, body {
 .pill {
   position: absolute;
   left: 50%;
-  bottom: 14px;
-  height: 46px;
-  min-width: 170px;
-  padding: 0 18px 0 16px;
+  bottom: 18px;
+  height: 44px;
+  padding: 0 8px 0 10px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   border-radius: 999px;
-  background: var(--pill-bg);
-  color: var(--cream);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 235, 0.06) inset;
-  transform: translate(-50%, 140%);
+  color: var(--text);
+  /* gradient hairline border */
+  background:
+    linear-gradient(var(--ink), var(--ink)) padding-box,
+    linear-gradient(120deg, rgba(139, 108, 255, 0.55), rgba(255, 255, 255, 0.1) 40%, rgba(255, 106, 69, 0.5)) border-box;
+  border: 1px solid transparent;
+  box-shadow: 0 14px 34px -10px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.3);
+  transform: translate(-50%, 160%) scale(0.9);
   opacity: 0;
-  transition: transform 300ms cubic-bezier(0.2, 0.9, 0.25, 1.1), opacity 220ms ease;
+  transition: transform 380ms cubic-bezier(0.2, 0.9, 0.2, 1.15), opacity 220ms ease;
   will-change: transform, opacity;
 }
-.pill.show {
-  transform: translate(-50%, 0);
-  opacity: 1;
-}
+.pill.show { transform: translate(-50%, 0) scale(1); opacity: 1; }
 
-.bars {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 26px;
+/* soft colored halo under the pill while it is alive */
+.glow {
+  position: absolute; z-index: -1; left: 12%; right: 12%; top: 30%; bottom: -10px;
+  border-radius: 999px; background: var(--grad); filter: blur(18px);
+  opacity: 0; transition: opacity 400ms ease;
 }
+.pill[data-phase="listening"] .glow { opacity: 0.55; animation: halo 2.4s ease-in-out infinite; }
+.pill[data-phase="transcribing"] .glow, .pill[data-phase="formatting"] .glow { opacity: 0.35; }
+.pill[data-phase="done"] .glow { opacity: 0.35; background: var(--ok); }
+.pill[data-phase="error"] .glow { opacity: 0.3; background: var(--bad); }
+@keyframes halo { 50% { opacity: 0.32; } }
+
+/* recording orb */
+.orb { position: relative; width: 24px; height: 24px; display: grid; place-items: center; flex: none; }
+.orb span { width: 10px; height: 10px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 10px rgba(255, 106, 69, 0.8); }
+.orb::before { content: ''; position: absolute; inset: 2px; border-radius: 50%; border: 1.5px solid rgba(255, 106, 69, 0.6); animation: ping 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) infinite; }
+@keyframes ping { from { transform: scale(0.55); opacity: 1; } to { transform: scale(1.25); opacity: 0; } }
+.pill[data-phase="transcribing"] .orb span, .pill[data-phase="formatting"] .orb span { background: transparent; box-shadow: none; }
+.pill[data-phase="transcribing"] .orb::before, .pill[data-phase="formatting"] .orb::before {
+  inset: 3px; border: 2px solid rgba(255, 255, 255, 0.14); border-top-color: var(--iris); border-right-color: var(--ember);
+  animation: spin 0.75s linear infinite; opacity: 1;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* symmetric waveform */
+.bars { display: flex; align-items: center; gap: 2.5px; height: 28px; }
 .bars span {
-  display: block;
-  width: 3px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--cream);
-  transition: height 70ms linear;
+  display: block; width: 3px; height: 3px; border-radius: 3px;
+  background: var(--text);
+  transition: height 60ms linear, background 300ms ease;
 }
-
-.label {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-}
-
-.check {
-  display: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--cream);
-  color: var(--pill-bg);
-  align-items: center;
-  justify-content: center;
-}
-
-/* Phase-specific looks */
+.pill[data-phase="listening"] .bars span { background: linear-gradient(180deg, #c7b8ff, #ff9a7a); }
 .pill[data-phase="transcribing"] .bars span,
-.pill[data-phase="formatting"] .bars span {
-  animation: think 900ms ease-in-out infinite;
+.pill[data-phase="formatting"] .bars span { animation: think 1s ease-in-out infinite; background: rgba(246, 244, 251, 0.7); }
+@keyframes think { 0%, 100% { height: 3px; opacity: 0.4; } 50% { height: 12px; opacity: 1; } }
+
+.label { font-size: 13.5px; font-weight: 650; letter-spacing: 0.005em; white-space: nowrap; padding-right: 6px; }
+.pill[data-phase="listening"] .label { display: none; }
+.pill[data-phase="transcribing"] .label, .pill[data-phase="formatting"] .label {
+  background: linear-gradient(90deg, var(--muted) 0%, #fff 45%, var(--muted) 90%); background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: shimmer 1.6s linear infinite;
 }
-.pill[data-phase="transcribing"] .bars span:nth-child(odd),
-.pill[data-phase="formatting"] .bars span:nth-child(odd) { animation-delay: -450ms; }
-.pill[data-phase="formatting"] .bars span { opacity: 0.75; }
-@keyframes think {
-  0%, 100% { height: 5px; opacity: 0.55; }
-  50% { height: 16px; opacity: 1; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+.timer { display: none; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); min-width: 34px; text-align: right; }
+.timer.warn { color: var(--warn); }
+.pill[data-phase="listening"] .timer { display: block; }
+.esc { display: none; }
+.pill[data-phase="listening"] .esc { display: block; }
+.esc kbd {
+  display: block; font-family: inherit; font-size: 11px; font-weight: 700; color: var(--muted);
+  padding: 3px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.09);
 }
 
-.pill[data-phase="done"] .bars { display: none; }
-.pill[data-phase="done"] .check { display: flex; animation: pop 320ms cubic-bezier(0.2, 0.9, 0.25, 1.3); }
-@keyframes pop { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.check, .cross { display: none; width: 22px; height: 22px; border-radius: 50%; align-items: center; justify-content: center; flex: none; }
+.check { background: var(--ok); color: var(--ink); }
+.cross { background: var(--bad); color: var(--ink); }
+.pill[data-phase="done"] .check { display: flex; animation: pop 380ms cubic-bezier(0.2, 0.9, 0.25, 1.4); }
+.pill[data-phase="error"] .cross { display: flex; animation: pop 380ms cubic-bezier(0.2, 0.9, 0.25, 1.4); }
+@keyframes pop { from { transform: scale(0.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
-.pill[data-phase="error"] { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 1.5px var(--red) inset; }
-.pill[data-phase="error"] .bars span { background: var(--red); height: 4px !important; animation: none; }
-.pill[data-phase="error"] .label { color: var(--red); }
+.pill[data-phase="done"] .orb, .pill[data-phase="done"] .bars,
+.pill[data-phase="error"] .orb, .pill[data-phase="error"] .bars { display: none; }
+.pill[data-phase="done"], .pill[data-phase="error"] { padding: 0 14px 0 11px; }
+.pill[data-phase="error"] .label { color: #ffd5d6; }
+.pill[data-phase="done"] .label small, .pill[data-phase="error"] .label small { color: var(--muted); font-weight: 600; margin-left: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; }
+}

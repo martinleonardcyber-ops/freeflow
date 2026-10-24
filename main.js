@@ -2,10 +2,11 @@
 // FreeFlow main process: tray, global shortcut, overlay pill, hub window,
 // dictation pipeline (overlay mic -> WAV -> local STT sidecar -> formatting ->
 // clipboard + simulated paste -> history).
-const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, clipboard, screen, nativeImage, shell, session } = require('electron');
+const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, clipboard, screen, nativeImage, nativeTheme, shell, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const { createStore } = require('./lib/store');
 const { formatText, countWords } = require('./lib/format');
 const { pcm16ToWav, wavDurationMs } = require('./lib/wav');
@@ -32,10 +33,12 @@ const DEFAULT_SETTINGS = {
   sidecarPort: 48123,
   maxDictationSec: 300,
   showHubAtStart: true,
+  theme: 'system',              // 'system' | 'light' | 'dark'
   vocabSeeded: false,           // default vocabulary (n8n, Higgsfield...) added once
 };
-const OVERLAY_W = 420;
-const OVERLAY_H = 120;
+const OVERLAY_W = 460;
+const OVERLAY_H = 140;
+const TYPING_WPM = 40;          // typing speed used for the "time saved" estimate (labelled as such in the hub)
 
 // ---- CLI flags (dev/verification) ------------------------------------------
 const argv = {};
@@ -90,6 +93,24 @@ function initStores() {
   history = createStore(path.join(userData, 'history.json'), []);
 }
 
+// Shared secret between the app and its STT engine, stable per install so a
+// still-running engine from a previous session can be adopted.
+function sidecarToken() {
+  const file = path.join(userData, 'engine.token');
+  try {
+    const t = fs.readFileSync(file, 'utf8').trim();
+    if (/^[0-9a-f]{48}$/.test(t)) return t;
+  } catch { /* first start */ }
+  const t = crypto.randomBytes(24).toString('hex');
+  try { fs.writeFileSync(file, t, { mode: 0o600 }); } catch (e) { log('token write:', e.message); }
+  return t;
+}
+
+function dayKey(d) {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+}
+
 function computeStats(hist) {
   const today = new Date().toDateString();
   let wordsToday = 0, total = 0, audioMs = 0, wordsTimed = 0, latency = 0, latencyN = 0;
@@ -99,6 +120,19 @@ function computeStats(hist) {
     if (h.audioMs > 0) { audioMs += h.audioMs; wordsTimed += h.words || 0; }
     if (h.latencyMs > 0) { latency += h.latencyMs; latencyN += 1; }
   }
+  // Words per day over the last 14 days, oldest first, plus the current streak of days with a dictation.
+  const perDay = new Map();
+  for (const h of hist) { const k = dayKey(h.ts); perDay.set(k, (perDay.get(k) || 0) + (h.words || 0)); }
+  const daily = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - i);
+    daily.push({ day: dayKey(d), words: perDay.get(dayKey(d)) || 0 });
+  }
+  let streak = 0;
+  const cur = new Date(); cur.setHours(12, 0, 0, 0);
+  if (!perDay.has(dayKey(cur))) cur.setDate(cur.getDate() - 1);   // today not started yet: count from yesterday
+  while (perDay.has(dayKey(cur))) { streak += 1; cur.setDate(cur.getDate() - 1); }
+  const typingMin = total / TYPING_WPM;
   return {
     wordsToday,
     totalWords: total,
@@ -106,6 +140,10 @@ function computeStats(hist) {
     avgWpm: audioMs > 0 ? Math.round(wordsTimed / (audioMs / 60000)) : 0,
     avgLatencyMs: latencyN ? Math.round(latency / latencyN) : 0,
     minutesSpoken: Math.round(audioMs / 60000),
+    minutesSaved: Math.max(0, Math.round(typingMin - audioMs / 60000)),
+    typingWpm: TYPING_WPM,
+    daily,
+    streak,
   };
 }
 
@@ -118,7 +156,7 @@ function buildState() {
     settings: settings.get(),
     dictionary: dictionary.get(),
     snippets: snippets.get(),
-    history: hist.slice(0, 300),
+    history: hist.slice(0, 500),
     stats: computeStats(hist),
     sidecar: sidecar ? { ...sidecar.info, port: sidecar.port, external: sidecar.external } : { ready: false, loading: true },
     loadingLabel: loadingLabel(sidecar ? sidecar.info : null),
@@ -128,6 +166,7 @@ function buildState() {
     shortcutSuspended,
     phase: dictation.phase,
     paths: { userData, logs: logDir, pasteHelper: pasteHelperPath() },
+    platform: process.platform,
   };
 }
 
@@ -149,7 +188,7 @@ function createHub() {
   hub = new BrowserWindow({
     width: 1100, height: 720, minWidth: 900, minHeight: 600,
     title: 'FreeFlow',
-    backgroundColor: '#fcfcfb',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0c0c10' : '#f6f5f2',
     icon: path.join(ASSETS, 'icon.ico'),
     autoHideMenuBar: true,
     show: false,
@@ -187,7 +226,8 @@ function createOverlay() {
 
 function positionOverlay() {
   if (!overlay) return;
-  const wa = screen.getPrimaryDisplay().workArea;
+  // The display the user is working on (cursor), not always the primary one.
+  const wa = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   overlay.setBounds({
     x: Math.round(wa.x + (wa.width - OVERLAY_W) / 2),
     y: Math.round(wa.y + wa.height - OVERLAY_H - 12),
@@ -277,6 +317,15 @@ function flashOverlay(phase, message, ms = 1600) {
   scheduleIdle(ms);
 }
 
+// Esc cancels a running dictation. Only registered while listening, so Esc
+// keeps working normally in other apps the rest of the time.
+function armEscape(on) {
+  try {
+    if (on && !globalShortcut.isRegistered('Escape')) globalShortcut.register('Escape', () => { if (dictation.phase === 'listening') { log('dictation: cancelled (Esc)'); cancelDictation(); } });
+    if (!on && globalShortcut.isRegistered('Escape')) globalShortcut.unregister('Escape');
+  } catch (e) { log('escape shortcut:', e.message); }
+}
+
 function startDictation(opts = {}) {
   if (dictation.phase !== 'idle') return false;
   if (!sidecar || !sidecar.ready) {
@@ -289,9 +338,10 @@ function startDictation(opts = {}) {
   dictation.startedAt = Date.now();
   dictation.stoppedAt = 0;
   showOverlay();
-  setPhase('listening');
+  setPhase('listening', { startedAt: dictation.startedAt, maxSec: settings.get().maxDictationSec });
   const s = settings.get();
   overlaySend('ff:rec-start', { deviceId: s.microphoneId, maxSec: s.maxDictationSec });
+  armEscape(true);
   clearTimeout(dictation.timer);
   dictation.timer = setTimeout(() => stopDictation(), (s.maxDictationSec || 300) * 1000);
   log('dictation: listening', opts);
@@ -302,6 +352,7 @@ function stopDictation() {
   if (dictation.phase !== 'listening') return false;
   clearTimeout(dictation.timer);
   dictation.stoppedAt = Date.now();
+  armEscape(false);
   setPhase('transcribing');
   overlaySend('ff:rec-stop');
   return true;
@@ -309,6 +360,7 @@ function stopDictation() {
 
 function cancelDictation() {
   clearTimeout(dictation.timer);
+  armEscape(false);
   overlaySend('ff:rec-cancel');
   setPhase('idle');
   scheduleIdle(0);
@@ -338,6 +390,29 @@ ipcMain.on('ff:audio-error', (_e, message) => {
   scheduleIdle(2000);
 });
 
+async function saveClipboard() {
+  const snap = {};
+  try {
+    const formats = await clipboard.availableFormats();
+    if (formats.some((f) => f.startsWith('text/plain'))) snap.text = await clipboard.readText();
+    if (formats.includes('text/html')) snap.html = await clipboard.readHTML();
+    if (formats.includes('text/rtf')) snap.rtf = await clipboard.readRTF();
+    if (formats.some((f) => f.startsWith('image/'))) {
+      const img = await clipboard.readImage();
+      if (img && !img.isEmpty()) snap.image = img;
+    }
+  } catch (e) {
+    log('clipboard save:', e.message);
+    try { snap.text = await clipboard.readText(); } catch { /* ignore */ }
+  }
+  return snap;
+}
+
+async function restoreClipboard(snap) {
+  if (!snap || !Object.keys(snap).length) { await clipboard.clear(); return; }
+  await clipboard.write(snap);
+}
+
 /**
  * WAV -> STT -> format -> clipboard (+ paste) -> history.
  * @param {Buffer} wav
@@ -356,17 +431,20 @@ async function runPipeline(wav, opts = {}) {
       scheduleIdle(1200);
       return { text: '', raw: res.text, sttMs: res.duration_ms, audioMs: res.audio_ms };
     }
-    // Electron >= 44: clipboard.readText()/writeText() return Promises; awaiting a plain value is harmless.
-    const previousClipboard = await clipboard.readText();
+    // Save the whole clipboard (text, HTML, RTF, image), not just its text: a
+    // copied image or formatted text must survive a dictation.
+    // Electron >= 44: clipboard reads/writes return Promises; awaiting a plain value is harmless.
+    const previousClipboard = await saveClipboard();
     await clipboard.writeText(text);
     let pasteOutcome = null;
     const shouldPaste = s.autoPaste && !opts.noPaste && !opts.toHub;
     if (opts.toHub && hub && !hub.isDestroyed()) hub.webContents.send('ff:insert', text);
     if (shouldPaste) {
       pasteOutcome = await paste(pasteHelperPath(), { delayMs: s.pasteDelayMs, log });
-      if (pasteOutcome.outcome === 'pasted' && previousClipboard !== text) {
+      if (pasteOutcome.outcome === 'pasted') {
         setTimeout(async () => {
-          try { if ((await clipboard.readText()) === text) await clipboard.writeText(previousClipboard); } catch (e) { log('clipboard restore:', e.message); }
+          // Only if nobody copied something else in the meantime.
+          try { if ((await clipboard.readText()) === text) await restoreClipboard(previousClipboard); } catch (e) { log('clipboard restore:', e.message); }
         }, s.restoreClipboardMs || 400);
       }
     }
@@ -538,6 +616,11 @@ function registerShortcut() {
   updateTray();
 }
 
+function applyTheme(theme) {
+  nativeTheme.themeSource = ['light', 'dark'].includes(theme) ? theme : 'system';
+  if (hub && !hub.isDestroyed()) hub.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#0c0c10' : '#f6f5f2');
+}
+
 // ---- IPC (hub) --------------------------------------------------------------
 ipcMain.handle('ff:get-state', () => buildState());
 
@@ -545,6 +628,7 @@ ipcMain.handle('ff:set-settings', (_e, patch) => {
   const before = settings.get();
   const next = settings.update(patch || {});
   if (next.shortcut !== before.shortcut || next.mode !== before.mode) registerShortcut();
+  if (next.theme !== before.theme) applyTheme(next.theme);
   if (next.launchAtLogin !== before.launchAtLogin) {
     try { app.setLoginItemSettings({ openAtLogin: !!next.launchAtLogin, path: process.execPath, args: app.isPackaged ? [] : [ROOT] }); } catch (e) { log('login item:', e.message); }
   }
@@ -595,7 +679,7 @@ ipcMain.handle('ff:dictionary', (_e, { action, word, sounds, previous } = {}) =>
     const ex = find(previous || w);
     if (ex) { ex.word = w; ex.sounds = snd; } else list.push({ word: w, sounds: snd });
   }
-  if (action === 'remove') list = list.filter((e) => e.word !== w);
+  if (action === 'remove') list = list.filter((e) => e.word.toLowerCase() !== w.toLowerCase());
   if (action === 'restore-defaults') {
     const have = new Set(list.map((e) => e.word.toLowerCase()));
     list = [...list, ...normalizeVocab(DEFAULT_VOCAB).filter((e) => !have.has(e.word.toLowerCase()))];
@@ -614,6 +698,7 @@ ipcMain.handle('ff:format-preview', (_e, text) => {
 ipcMain.handle('ff:snippets', (_e, { action, id, trigger, expansion }) => {
   let list = snippets.get();
   if (action === 'add' && trigger && trigger.trim()) list = [...list, { id: Date.now().toString(36), trigger: trigger.trim(), expansion: String(expansion || '') }];
+  if (action === 'update' && trigger && trigger.trim()) list = list.map((x) => (x.id === id ? { ...x, trigger: trigger.trim(), expansion: String(expansion || '') } : x));
   if (action === 'remove') list = list.filter((x) => x.id !== id);
   snippets.set(list);
   pushState();
@@ -641,7 +726,7 @@ ipcMain.handle('ff:screenshot', async (_e, { which, out }) => takeScreenshot(whi
 
 async function testPipeline(wavPath) {
   const wav = fs.readFileSync(wavPath);
-  const previousClipboard = await clipboard.readText();
+  const previousClipboard = await saveClipboard();
   showOverlay();
   setPhase('transcribing');
   dictation.stoppedAt = Date.now();
@@ -649,7 +734,7 @@ async function testPipeline(wavPath) {
     const entry = await runPipeline(wav, { noPaste: true });
     return { ...entry, clipboard: await clipboard.readText() };
   } finally {
-    await clipboard.writeText(previousClipboard);   // a test must not leave text in the user's clipboard
+    await restoreClipboard(previousClipboard);   // a test must not leave text in the user's clipboard
   }
 }
 
@@ -783,6 +868,7 @@ app.on('before-quit', (e) => { if (!quitting) { e.preventDefault(); quitApp(); }
 
 app.whenReady().then(async () => {
   initStores();
+  applyTheme(settings.get().theme);
   log(`FreeFlow ${app.getVersion()} starting (packaged=${app.isPackaged}, electron=${process.versions.electron})`);
 
   // Microphone permission for our own renderers.
@@ -792,7 +878,7 @@ app.whenReady().then(async () => {
   try { uiohookMod = require('uiohook-napi'); pttAvailable = !!(uiohookMod && uiohookMod.uIOhook); } catch (e) { pttAvailable = false; log('uiohook-napi unavailable:', e.message); }
 
   const s = settings.get();
-  sidecar = new Sidecar({ port: s.sidecarPort, hfHome: s.modelCache, log, appPath: ROOT, resourcesPath: process.resourcesPath, isPackaged: app.isPackaged });
+  sidecar = new Sidecar({ port: s.sidecarPort, hfHome: s.modelCache, log, appPath: ROOT, resourcesPath: process.resourcesPath, isPackaged: app.isPackaged, token: sidecarToken() });
   sidecar.on('ready', (info) => { log('sidecar ready', info); updateTray(); pushState(); });
   sidecar.on('failed', (err) => { log('sidecar failed', err); updateTray(); pushState(); });
   sidecar.on('exit', () => { updateTray(); pushState(); });

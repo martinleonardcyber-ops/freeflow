@@ -58,6 +58,7 @@ freeflow/
 │   └── PasteHelper.cs        collage simulé (SendInput), --dry-run, --info, --mask
 ├── installer/installer.nsh   règles de l'installateur (fermer FreeFlow avant mise à jour, nettoyage)
 ├── assets/                   icônes (make_icon.py) et police Figtree
+├── dev/                      aperçu de l'interface dans un navigateur (faux pont, données de démo)
 └── docs/                     cette page et les captures du README
 ```
 
@@ -81,7 +82,10 @@ Variables d'environnement reconnues par `stt_server.py` :
 | `FREEFLOW_MODEL` | modèle sur GPU | `large-v3` |
 | `FREEFLOW_CPU_MODEL` | modèle sur processeur | `small` |
 | `FREEFLOW_DEVICE` | forcer `cuda` ou `cpu` | essai GPU puis CPU |
+| `FREEFLOW_TOKEN` | secret exigé (en-tête `X-FreeFlow-Token`) sur `POST /transcribe` et `/shutdown` | fourni par l'application (`%APPDATA%\FreeFlow\engine.token`) ; vide = pas de contrôle |
 | `HF_HOME` | cache des modèles | fourni par l'application |
+
+Le moteur n'écoute que sur `127.0.0.1`, refuse les requêtes dont l'en-tête `Host` n'est pas local (rebinding DNS) et n'envoie aucun en-tête CORS : une page web ouverte dans le navigateur ne peut ni l'arrêter ni s'en servir.
 
 `GET /health` renvoie `phase` (`starting`, `downloading`, `loading`, `ready`, `error`) et, pendant le premier téléchargement, `download: {model, done, total}` en octets. L'application affiche cette progression dans la fenêtre et dans l'info-bulle de l'icône.
 
@@ -98,6 +102,16 @@ Aucune frappe n'est envoyée et le collage est désactivé pendant ces tests :
 .\node_modules\.bin\electron.cmd . --screenshots="C:\dossier" --display-name= --wait-ready --exit
 # plan du collage simulé, sans rien envoyer
 .\native\PasteHelper.exe --dry-run
+```
+
+## Aperçu de l'interface sans Windows
+
+Les deux fenêtres se dessinent dans un navigateur ordinaire, avec un faux pont `window.freeflow` et des données de démonstration (`dev/mock-bridge.js`, exclu du paquet) :
+
+```bash
+python -m http.server 3300
+# http://localhost:3300/dev/preview.html?page=hub          (&engine=downloading, &empty=1)
+# http://localhost:3300/dev/preview.html?page=overlay&phase=listening|transcribing|done|error
 ```
 
 ## Limites connues

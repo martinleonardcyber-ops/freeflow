@@ -18,7 +18,10 @@ Gratuit, open source, sans compte, sans abonnement, et rien ne quitte ton PC.</p
 - **Vocabulaire** : apprends-lui tes mots. « n huit n » devient `n8n`, « x field » devient `Higgsfield`. Pour chaque mot, tu indiques ce que le modèle entend à la place ; un champ de test montre la correction en direct.
 - **Snippets** : un mot déclencheur remplacé par un texte (ton adresse, une signature, un lien…).
 - **Mise en forme** : les « euh » et « hum » sont retirés, les majuscules, les espaces avant `? ! ; :` et la casse de tes mots sont corrigées.
-- **Historique** : toutes tes dictées, avec le nombre de mots et le temps de transcription, à recopier en un clic.
+- **Historique** : toutes tes dictées regroupées par jour, avec recherche, l'application cible, le temps de transcription et la transcription brute avant mise en forme.
+- **Tableau de bord** : mots du jour, vitesse, série de jours, activité sur 14 jours et temps gagné (estimation face à une frappe à 40 mots/min).
+- **Annuler** : `Échap` pendant l'écoute abandonne la dictée ; la pastille affiche la durée et prévient 30 s avant la limite.
+- **Thème clair ou sombre**, qui suit Windows par défaut.
 - **Vie privée** : une fois le modèle téléchargé, FreeFlow n'a plus besoin d'Internet. Ta voix, tes textes et ton historique restent sur ton disque.
 
 <p align="center">
@@ -56,13 +59,14 @@ Avec moins de mémoire vidéo, FreeFlow essaie d'abord une version allégée du 
 | Action | Comment |
 |---|---|
 | Dicter | `Ctrl + Alt + Espace`, parle, `Ctrl + Alt + Espace` |
+| Annuler | `Échap` pendant l'écoute |
 | Push-to-talk | Paramètres → *Maintenir pour parler* : garde la touche enfoncée, relâche pour transcrire. Un appui bref passe en mains libres |
 | Changer le raccourci | Paramètres → Raccourci → *Enregistrer*, tape ta combinaison, *Confirmer* |
 | Langue | Paramètres → Langue : automatique, français ou anglais (forcer la langue aide sur les phrases très courtes) |
 | Ajouter un mot | Dictionnaire → le mot correct + ce que le modèle entend à la place, puis *Tester* |
 | Sans collage automatique | Paramètres → décoche *Coller automatiquement* : le texte est seulement copié, colle-le avec `Ctrl + V` |
 
-Le presse-papiers est remis comme avant juste après le collage. Les fenêtres lancées en administrateur refusent le collage simulé : le texte reste alors dans le presse-papiers.
+Le presse-papiers est remis comme avant juste après le collage, y compris une image ou du texte mis en forme. Les fenêtres lancées en administrateur refusent le collage simulé : le texte reste alors dans le presse-papiers.
 
 ## Désinstaller
 

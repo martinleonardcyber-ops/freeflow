@@ -9,17 +9,24 @@ Stdlib-only HTTP server in front of faster-whisper:
                                    "duration_ms","audio_ms","segments"}
   POST /shutdown               -> exits the process
 
+POST endpoints require the header X-FreeFlow-Token when FREEFLOW_TOKEN is set
+(the app always sets it): a web page open in the browser can reach 127.0.0.1
+too, and without the token it could stop the engine or use it. Requests whose
+Host is not the loopback address are refused (DNS rebinding).
+
 Prints READY on stdout once the model is loaded and warm. Env vars:
   FREEFLOW_PORT     listening port (default 48123)
   FREEFLOW_MODEL    whisper model for the GPU path (default large-v3)
   FREEFLOW_CPU_MODEL fallback model when CUDA fails (default small)
   FREEFLOW_DEVICE   force "cuda" or "cpu" (default: try cuda, fall back to cpu)
+  FREEFLOW_TOKEN    shared secret for the POST endpoints (empty = no check, manual runs)
   HF_HOME           Hugging Face cache (the app passes <userData>\\models)
 
 The first launch downloads the model from the Hugging Face Hub; /health then
 reports phase="downloading" and download={"model","done","total"} in bytes.
 """
 import glob
+import hmac
 import io
 import json
 import os
@@ -85,6 +92,8 @@ PORT = int(os.environ.get("FREEFLOW_PORT", "48123"))
 GPU_MODEL = os.environ.get("FREEFLOW_MODEL", "large-v3")
 CPU_MODEL = os.environ.get("FREEFLOW_CPU_MODEL", "small")
 FORCE_DEVICE = os.environ.get("FREEFLOW_DEVICE", "").lower().strip()
+TOKEN = os.environ.get("FREEFLOW_TOKEN", "")
+_ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}", "127.0.0.1", "localhost"}
 # Files faster-whisper needs from a CTranslate2 Whisper repo (same list as download_model).
 _MODEL_FILES = ("config.json", "preprocessor_config.json", "model.bin", "tokenizer.json", "vocabulary.")
 
@@ -307,11 +316,20 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(data)
 
+    def _host_ok(self):
+        return (self.headers.get("Host") or "").lower() in _ALLOWED_HOSTS
+
+    def _token_ok(self):
+        if not TOKEN:
+            return True
+        return hmac.compare_digest(self.headers.get("X-FreeFlow-Token") or "", TOKEN)
+
     def do_GET(self):
+        if not self._host_ok():
+            return self._json(403, {"error": "forbidden"})
         path = urlparse(self.path).path
         if path in ("/health", "/"):
             return self._json(200, {"status": "ok" if STATE["ready"] else ("loading" if STATE["loading"] else "error"),
@@ -319,6 +337,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(404, {"error": "not found"})
 
     def do_POST(self):
+        if not self._host_ok() or not self._token_ok():
+            self.close_connection = True   # the body was not read
+            return self._json(403, {"error": "forbidden"})
         url = urlparse(self.path)
         if url.path == "/shutdown":
             self._json(200, {"ok": True})

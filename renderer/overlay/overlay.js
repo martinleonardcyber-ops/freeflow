@@ -5,17 +5,20 @@
   const pill = document.getElementById('pill');
   const barsEl = document.getElementById('bars');
   const labelEl = document.getElementById('label');
-  const N_BARS = 22;
+  const timerEl = document.getElementById('timer');
+  const N_BARS = 23;                 // odd: the newest level sits in the middle and spreads outwards
+  const HALF = (N_BARS + 1) / 2;
   const LABELS = {
     listening: 'Écoute',
-    transcribing: 'Transcription',
-    formatting: 'Mise en forme',
+    transcribing: 'Transcription…',
+    formatting: 'Mise en forme…',
     done: 'Terminé',
     error: 'Erreur',
   };
   for (let i = 0; i < N_BARS; i++) barsEl.appendChild(document.createElement('span'));
   const bars = Array.from(barsEl.children);
-  const levels = new Array(N_BARS).fill(0);
+  const levels = new Array(HALF).fill(0);
+  let timerInt = null, startedAt = 0, maxSec = 300;
 
   // ---- audio capture state
   let ctx = null, stream = null, source = null, node = null, sink = null;
@@ -23,11 +26,27 @@
   let flushResolve = null;
 
   function setBars() {
+    const mid = HALF - 1;
     for (let i = 0; i < N_BARS; i++) {
-      const h = 4 + Math.round(levels[i] * 22);
+      const d = Math.abs(i - mid);                     // distance from the centre = age of the level
+      const taper = 1 - (d / HALF) * 0.45;             // edges a little calmer than the centre
+      const h = 3 + Math.round(levels[HALF - 1 - d] * 25 * taper);
       bars[i].style.height = `${h}px`;
     }
   }
+  function fmtTime(sec) { return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }
+  function tick() {
+    const el = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    const left = maxSec - el;
+    // Last 30 s: show the time left instead, in amber.
+    timerEl.textContent = left <= 30 ? `-${fmtTime(Math.max(0, left))}` : fmtTime(el);
+    timerEl.classList.toggle('warn', left <= 30);
+  }
+  function startTimer(at, max) {
+    startedAt = at || Date.now(); maxSec = max || 300;
+    clearInterval(timerInt); tick(); timerInt = setInterval(tick, 250);
+  }
+  function stopTimer() { clearInterval(timerInt); timerInt = null; }
   function pushLevel(v) {
     levels.shift();
     levels.push(Math.max(0, Math.min(1, v)));
@@ -40,17 +59,28 @@
 
   function show(phase, payload = {}) {
     pill.dataset.phase = phase;
-    let text = LABELS[phase] || '';
-    if (phase === 'done' && payload.latencyMs) text = `Terminé · ${(payload.latencyMs / 1000).toFixed(1)} s`;
-    if (phase === 'error') text = payload.message || 'Erreur';
-    labelEl.textContent = text;
+    labelEl.textContent = LABELS[phase] || '';
+    if (phase === 'done') {
+      const verb = { pasted: 'Collé', clipboard: 'Copié', hub: 'Inséré', blocked: 'Copié' }[payload.pasted] || 'Terminé';
+      labelEl.textContent = verb;
+      if (payload.latencyMs) {
+        const small = document.createElement('small');
+        small.textContent = `${(payload.latencyMs / 1000).toFixed(1).replace('.', ',')} s`;
+        labelEl.appendChild(small);
+      }
+    }
+    if (phase === 'error') labelEl.textContent = payload.message || 'Erreur';
     pill.classList.add('show');
-    if (phase === 'listening') { if (!raf) renderLoop(); } else { stopRender(); }
+    if (phase === 'listening') {
+      if (!raf) renderLoop();
+      if (!timerInt || payload.startedAt) startTimer(payload.startedAt || (payload.demo ? Date.now() - 7000 : Date.now()), payload.maxSec);
+    } else { stopRender(); stopTimer(); }
     if (payload.demo && phase === 'listening') startDemoLevels(); else stopDemoLevels();
   }
   function hide() {
     pill.classList.remove('show');
     stopRender();
+    stopTimer();
     stopDemoLevels();
   }
 

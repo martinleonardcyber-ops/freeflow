@@ -1,7 +1,7 @@
 {
   "name": "freeflow",
   "productName": "FreeFlow",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Dictée vocale 100 % locale pour Windows : tu parles, le texte s'écrit là où tu tapes.",
   "main": "main.js",
   "author": "Alan",
@@ -16,8 +16,8 @@
     "start": "electron .",
     "build:stt": "python stt/build_stt.py",
     "build:native": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /optimize /target:exe /out:native/PasteHelper.exe native/PasteHelper.cs",
-    "package": "npx @electron/packager . FreeFlow --platform=win32 --arch=x64 --overwrite --icon=assets/icon.ico --extra-resource=stt/dist/freeflow-stt --extra-resource=native/PasteHelper.exe --out=dist --ignore=\"^/stt($|/)\" --ignore=\"^/native/PasteHelper\\.cs$\" --ignore=\"^/screenshots($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/release($|/)\" --ignore=\"^/installer($|/)\" --ignore=\"^/docs($|/)\" --ignore=\"^/\\.git($|/)\" --ignore=\"^/\\.gitignore$\" --ignore=\"^/assets/make_icon\\.py$\" --ignore=\"^/README\\.md$\"",
-    "package:release": "npx @electron/packager . FreeFlow --platform=win32 --arch=x64 --overwrite --icon=assets/icon.ico --extra-resource=stt/dist/freeflow-stt --extra-resource=native/PasteHelper.exe --out=release --ignore=\"^/stt($|/)\" --ignore=\"^/native/PasteHelper\\.cs$\" --ignore=\"^/screenshots($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/release($|/)\" --ignore=\"^/installer($|/)\" --ignore=\"^/docs($|/)\" --ignore=\"^/\\.git($|/)\" --ignore=\"^/\\.gitignore$\" --ignore=\"^/assets/make_icon\\.py$\" --ignore=\"^/README\\.md$\"",
+    "package": "npx @electron/packager . FreeFlow --platform=win32 --arch=x64 --overwrite --icon=assets/icon.ico --extra-resource=stt/dist/freeflow-stt --extra-resource=native/PasteHelper.exe --out=dist --ignore=\"^/stt($|/)\" --ignore=\"^/native/PasteHelper\\.cs$\" --ignore=\"^/screenshots($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/release($|/)\" --ignore=\"^/installer($|/)\" --ignore=\"^/docs($|/)\" --ignore=\"^/dev($|/)\" --ignore=\"^/\\.git($|/)\" --ignore=\"^/\\.gitignore$\" --ignore=\"^/assets/make_icon\\.py$\" --ignore=\"^/README\\.md$\"",
+    "package:release": "npx @electron/packager . FreeFlow --platform=win32 --arch=x64 --overwrite --icon=assets/icon.ico --extra-resource=stt/dist/freeflow-stt --extra-resource=native/PasteHelper.exe --out=release --ignore=\"^/stt($|/)\" --ignore=\"^/native/PasteHelper\\.cs$\" --ignore=\"^/screenshots($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/release($|/)\" --ignore=\"^/installer($|/)\" --ignore=\"^/docs($|/)\" --ignore=\"^/dev($|/)\" --ignore=\"^/\\.git($|/)\" --ignore=\"^/\\.gitignore$\" --ignore=\"^/assets/make_icon\\.py$\" --ignore=\"^/README\\.md$\"",
     "installer": "electron-builder --win nsis --x64 --prepackaged release/FreeFlow-win32-x64 --publish never",
     "release": "npm run package:release && npm run installer"
   },

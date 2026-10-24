@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>FreeFlow preview</title>
+  <!-- Design preview: python -m http.server (repo root), then /dev/preview.html?page=hub
+       Options: &engine=downloading, &empty=1, page=overlay&phase=listening|transcribing|done|error -->
+  <script src="/dev/mock-bridge.js"></script>
+  <script>
+    (async () => {
+      const q = new URLSearchParams(location.search);
+      const page = q.get('page') === 'overlay' ? 'overlay' : 'hub';
+      await window.__mockReady;
+      const html = await (await fetch(`/renderer/${page}/index.html`)).text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const base = document.createElement('base'); base.href = `/renderer/${page}/`; document.head.appendChild(base);
+      for (const l of doc.querySelectorAll('link[rel=stylesheet]')) { const n = document.createElement('link'); n.rel = 'stylesheet'; n.href = l.getAttribute('href'); document.head.appendChild(n); }
+      for (const s of doc.querySelectorAll('script')) s.remove();
+      document.body.innerHTML = doc.body.innerHTML;
+      if (page === 'overlay') document.body.style.background = q.get('bg') || '#5d6b7a';
+      const s = document.createElement('script'); s.src = `${page}.js`; document.body.appendChild(s);
+      if (page === 'overlay') s.onload = () => {
+        const phase = q.get('phase') || 'listening';
+        window.freeflow._emit('ff:overlay', { phase, demo: true, latencyMs: 640, pasted: 'pasted', message: phase === 'error' ? 'Collage bloqué, texte copié' : undefined, maxSec: 300 });
+      };
+    })();
+  </script>
+</head>
+<body></body>
+</html>

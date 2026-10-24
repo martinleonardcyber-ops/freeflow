@@ -8,11 +8,18 @@
 </head>
 <body>
   <div id="pill" class="pill" data-phase="idle" aria-live="polite">
-    <div class="bars" id="bars"></div>
+    <div class="glow" aria-hidden="true"></div>
+    <div class="orb" aria-hidden="true"><span></span></div>
     <div class="check" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="18" height="18"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg viewBox="0 0 24 24" width="14" height="14"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
+    <div class="cross" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="12" height="12"><path d="M7 7l10 10M17 7 7 17" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+    </div>
+    <div class="bars" id="bars"></div>
     <div class="label" id="label">Écoute</div>
+    <div class="timer" id="timer">0:00</div>
+    <div class="esc" id="esc"><kbd>Échap</kbd></div>
   </div>
   <script src="overlay.js"></script>
 </body>

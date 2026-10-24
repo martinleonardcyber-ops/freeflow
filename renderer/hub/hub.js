@@ -2,132 +2,321 @@
 // Hub renderer: dashboard, history, dictionary, snippets, settings.
 (() => {
   const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
   const ff = window.freeflow;
   let state = null;
   let phase = 'idle';
   let hubDictation = false;      // the current dictation targets the "try here" box
   let previewTimer = null;
+  const drawn = {};              // last rendered signature per list, so state pushes (download progress...) do not rebuild them
+  const openRaw = new Set();     // history entries showing their raw transcript
 
   // ---- navigation
   function navigate(section) {
-    document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.section === section));
-    document.querySelectorAll('.section').forEach((s) => s.classList.toggle('active', s.id === `section-${section}`));
+    if (!document.getElementById(`section-${section}`)) section = 'home';
+    $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.section === section));
+    $$('.section').forEach((s) => s.classList.toggle('active', s.id === `section-${section}`));
+    $('#content').scrollTop = 0;
     try { localStorage.setItem('ff.section', section); } catch { /* ignore */ }
   }
-  document.querySelectorAll('.nav-item').forEach((b) => b.addEventListener('click', () => navigate(b.dataset.section)));
+  $$('.nav-item').forEach((b) => b.addEventListener('click', () => navigate(b.dataset.section)));
+  document.addEventListener('click', (e) => { const g = e.target.closest('[data-goto]'); if (g) navigate(g.dataset.goto); });
   ff.on('ff:navigate', navigate);
   try { navigate(localStorage.getItem('ff.section') || 'home'); } catch { navigate('home'); }
 
   // ---- helpers
-  function toast(msg) {
+  function toast(msg, kind) {
     const t = $('#toast');
-    t.textContent = msg;
+    $('#toast-text').textContent = msg;
+    t.classList.toggle('error', kind === 'error');
     t.classList.add('show');
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => t.classList.remove('show'), 1800);
+    toast._t = setTimeout(() => t.classList.remove('show'), 2000);
   }
-  function fmtNum(n) { return new Intl.NumberFormat('fr-FR').format(n || 0); }
-  function relTime(iso) {
-    const d = new Date(iso); const diff = (Date.now() - d.getTime()) / 1000;
-    if (diff < 60) return 'à l’instant';
-    if (diff < 3600) return `il y a ${Math.round(diff / 60)} min`;
-    if (diff < 86400 && d.toDateString() === new Date().toDateString()) return `aujourd’hui à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
-    return d.toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  }
+  const NF = new Intl.NumberFormat('fr-FR');
+  function fmtNum(n) { return NF.format(n || 0); }
+  function plural(n, one, many) { return `${fmtNum(n)} ${n > 1 ? many : one}`; }
   function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; }
+  function icon(id) { return `<svg><use href="#${id}"/></svg>`; }
+  function fold(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+  function dayKey(d) { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`; }
+  function timeOf(iso) { return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
+  function dayTitle(iso) {
+    const d = new Date(iso), today = new Date(), y = new Date(); y.setDate(y.getDate() - 1);
+    if (dayKey(d) === dayKey(today)) return 'Aujourd’hui';
+    if (dayKey(d) === dayKey(y)) return 'Hier';
+    const sameYear = d.getFullYear() === today.getFullYear();
+    return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', ...(sameYear ? {} : { year: 'numeric' }) });
+  }
+  function relShort(iso) {
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 60) return 'à l’instant';
+    if (diff < 3600) return `il y a ${Math.round(diff / 60)} min`;
+    if (dayKey(iso) === dayKey(new Date())) return timeOf(iso);
+    return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  }
+  function fmtMinutes(min) {
+    if (min < 60) return `${fmtNum(min)} min`;
+    const h = Math.floor(min / 60), m = min % 60;
+    return m ? `${h} h ${String(m).padStart(2, '0')}` : `${h} h`;
+  }
+  function highlight(text, q) {
+    if (!q) return esc(text);
+    // Accent-insensitive match on the folded text, highlighted on the original.
+    const f = fold(text), fq = fold(q);
+    let out = '', i = 0, j;
+    while (fq && (j = f.indexOf(fq, i)) !== -1) { out += esc(text.slice(i, j)) + `<mark>${esc(text.slice(j, j + fq.length))}</mark>`; i = j + fq.length; }
+    return out + esc(text.slice(i));
+  }
+  const APP_NAMES = { chrome: 'Chrome', msedge: 'Edge', firefox: 'Firefox', code: 'VS Code', slack: 'Slack', notion: 'Notion', discord: 'Discord', outlook: 'Outlook', winword: 'Word', teams: 'Teams', 'ms-teams': 'Teams', windowsterminal: 'Terminal', explorer: 'Explorateur', notepad: 'Bloc-notes', obsidian: 'Obsidian', telegram: 'Telegram', whatsapp: 'WhatsApp', cursor: 'Cursor' };
+  function appName(p) { const k = String(p || '').toLowerCase(); return APP_NAMES[k] || (p ? p.charAt(0).toUpperCase() + p.slice(1) : ''); }
+
+  // ---- hero waveform (decorative; speeds up while listening)
+  const wave = $('#hero-wave');
+  for (let i = 0; i < 30; i++) {
+    const s = document.createElement('span');
+    const center = 1 - Math.abs(i - 14.5) / 15;
+    s.style.setProperty('--amp', (1.4 + center * 4.2 + Math.random() * 1.6).toFixed(2));
+    s.style.animationDelay = `${(-Math.random() * 2.8).toFixed(2)}s`;
+    wave.appendChild(s);
+  }
 
   // ---- render
+  function engineLabel(eng) {
+    if (phase === 'listening') return { title: 'Écoute…', sub: '', cls: 'listening' };
+    if (eng.ready) return { title: `Prêt · ${eng.device === 'cuda' ? 'GPU' : 'CPU'}`, sub: `Whisper ${eng.model}`, cls: 'ready' };
+    if (eng.loading) return { title: eng.phase === 'downloading' ? 'Téléchargement du modèle' : 'Chargement du modèle…', sub: eng.phase === 'downloading' ? (state.loadingShort || '').replace(/^Téléchargement · /, '') : 'quelques secondes', cls: '' };
+    return { title: 'Moteur indisponible', sub: 'voir Paramètres', cls: 'error' };
+  }
+
+  function renderKeysInto(node, acc, cls) {
+    node.innerHTML = String(acc || '').split('+').filter(Boolean).map((k) => `<kbd>${esc(KEY_LABEL[k] || k)}</kbd>`).join('<span class="plus">+</span>');
+    if (cls) node.className = cls;
+  }
+
   function render() {
     if (!state) return;
     const s = state.settings, st = state.stats, eng = state.sidecar || {};
+
+    // Sidebar
+    const e = engineLabel(eng);
+    $('#engine-pill').className = 'engine ' + e.cls;
+    $('#engine-text').textContent = e.title;
+    $('#engine-sub').textContent = e.sub;
+    const dl = eng.phase === 'downloading' && eng.download && eng.download.total ? eng.download : null;
+    $('#engine-bar').hidden = !dl;
+    if (dl) $('#engine-bar-fill').style.width = `${Math.min(100, (100 * (dl.done || 0)) / dl.total).toFixed(1)}%`;
+    renderKeysInto($('#side-keys'), s.shortcut);
+    $('#nav-history-count').textContent = st.dictations ? fmtNum(st.dictations) : '';
+    $('#nav-dict-count').textContent = state.dictionary.length || '';
+    $('#nav-snip-count').textContent = state.snippets.length || '';
+
+    renderHome(s, st, eng);
+    renderHistory();
+    renderDictionary();
+    renderSnippets();
+    renderSettings(s, st, eng);
+    renderTry();
+  }
+
+  function renderHome(s, st, eng) {
     const hour = new Date().getHours();
     const name = state.user ? state.user.charAt(0).toUpperCase() + state.user.slice(1) : '';
     $('#greeting').textContent = `${hour < 18 && hour >= 5 ? 'Bonjour' : 'Bonsoir'}${name ? ', ' + name : ''}`;
-    $('#stat-today').textContent = fmtNum(st.wordsToday);
-    $('#stat-total').textContent = fmtNum(st.totalWords);
-    $('#stat-wpm').textContent = fmtNum(st.avgWpm);
-    $('#stat-count').textContent = fmtNum(st.dictations);
-    $('#howto-shortcut').textContent = prettyAcc(s.shortcut);
+    const busy = phase === 'transcribing' || phase === 'formatting';
+    const heroState = phase === 'listening' ? 'listening' : busy ? 'busy' : eng.ready ? 'ready' : eng.loading ? 'loading' : 'error';
+    $('#hero').dataset.state = heroState;
+    $('#hero-status').textContent = {
+      listening: 'J’écoute…', busy: 'Transcription en cours…', ready: `Prêt · ${eng.device === 'cuda' ? 'GPU' : 'CPU'} · ${eng.model || ''}`,
+      loading: eng.phase === 'downloading' ? (state.loadingLabel || 'Téléchargement du modèle') : 'Chargement du modèle…', error: 'Moteur indisponible',
+    }[heroState];
+    renderKeysInto($('#howto-shortcut'), s.shortcut);
     const ptt = s.mode === 'ptt';
-    $('#howto-mode').textContent = ptt ? 'et garde la touche enfoncée : la pastille apparaît en bas de l’écran et écoute.' : ': la pastille apparaît en bas de l’écran et écoute.';
-    $('#howto-stop').textContent = ptt ? 'Relâche la touche' : 'Appuie à nouveau';
-    $('#howto-paste').textContent = s.autoPaste ? 'Collage automatique activé. Le presse-papiers est restauré juste après.' : 'Collage automatique désactivé : le texte est copié dans le presse-papiers, colle-le avec Ctrl+V.';
+    $('#howto-mode').textContent = ptt ? 'maintiens et parle, relâche pour coller' : 'pour démarrer, puis à nouveau pour coller';
+    $('#howto-line').textContent = s.autoPaste
+      ? 'Place ton curseur n’importe où, appuie sur ton raccourci et parle. Le texte s’écrit tout seul.'
+      : 'Appuie sur ton raccourci et parle : le texte est copié, colle-le avec Ctrl + V.';
 
-    // Engine pill
-    const pill = $('#engine-pill');
-    pill.className = 'engine ' + (phase === 'listening' ? 'listening' : eng.ready ? 'ready' : eng.error && !eng.loading ? 'error' : '');
-    $('#engine-text').textContent = phase === 'listening' ? 'Écoute…' : eng.ready ? `${eng.device === 'cuda' ? 'GPU' : 'CPU'} · ${eng.model} · prêt` : eng.loading ? (state.loadingShort || 'Chargement du modèle…') : (eng.error ? 'Moteur indisponible' : '…');
+    $('#stat-today').textContent = fmtNum(st.wordsToday);
+    $('#stat-total-foot').textContent = `${fmtNum(st.totalWords)} au total`;
+    $('#stat-wpm').textContent = fmtNum(st.avgWpm);
+    $('#stat-wpm-foot').textContent = st.minutesSpoken ? `${fmtMinutes(st.minutesSpoken)} de voix au total` : 'à l’oral';
+    $('#stat-saved').textContent = fmtMinutes(st.minutesSaved || 0);
+    $('#stat-saved-foot').textContent = `estimé vs frappe à ${st.typingWpm || 40} mots/min`;
+    $('#stat-streak').textContent = fmtNum(st.streak || 0);
+    $('#stat-streak-unit').textContent = (st.streak || 0) > 1 ? 'jours' : 'jour';
+    $('#stat-count-foot').textContent = plural(st.dictations, 'dictée', 'dictées');
 
-    // History
-    const hl = $('#history-list'); hl.innerHTML = '';
-    if (!state.history.length) hl.appendChild(el('<div class="empty">Aucune dictée pour le moment. Appuie sur le raccourci et parle.</div>'));
-    for (const h of state.history) {
-      const node = el(`<div class="item" data-id="${esc(h.id)}">
-        <div><div class="text">${esc(h.text)}</div>
-          <div class="meta"><span>${esc(relTime(h.ts))}</span><span>${h.words} mots</span>${h.latencyMs ? `<span>${(h.latencyMs / 1000).toFixed(1)} s</span>` : ''}${h.app ? `<span>→ ${esc(h.app)}</span>` : ''}${h.language ? `<span>${esc(h.language)}</span>` : ''}</div></div>
-        <div class="actions"><button class="btn small" data-act="copy">Copier</button><button class="btn small danger" data-act="del">Supprimer</button></div></div>`);
-      node.querySelector('[data-act=copy]').addEventListener('click', async () => { await ff.invoke('ff:copy', h.text); toast('Copié'); });
-      node.querySelector('[data-act=del]').addEventListener('click', () => ff.invoke('ff:history', { action: 'delete', id: h.id }));
-      hl.appendChild(node);
+    // Activity: real words per day from the history.
+    const daily = st.daily || [];
+    const sig = JSON.stringify(daily);
+    if (drawn.chart !== sig) {
+      drawn.chart = sig;
+      const max = Math.max(1, ...daily.map((d) => d.words));
+      const total = daily.reduce((a, d) => a + d.words, 0);
+      $('#activity-total').innerHTML = `${fmtNum(total)}<small>mots en 14 jours</small>`;
+      const chart = $('#chart'); chart.innerHTML = '';
+      daily.forEach((d, i) => {
+        const [y, m, dd] = d.day.split('-').map(Number);
+        const date = new Date(y, m - 1, dd);
+        const isToday = i === daily.length - 1;
+        const h = d.words ? Math.max(8, Math.round((d.words / max) * 100)) : 3;
+        const label = date.toLocaleDateString('fr-FR', { weekday: 'narrow' }).toUpperCase();
+        const tip = `${date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })} · ${plural(d.words, 'mot', 'mots')}`;
+        chart.appendChild(el(`<div class="col${isToday ? ' today-col' : ''}"><div class="bar${d.words ? ' has' : ''}${isToday && d.words ? ' today' : ''}" style="height:${h}%;animation-delay:${i * 25}ms"></div><span class="lbl">${esc(label)}</span><span class="tip">${esc(tip)}</span></div>`));
+      });
+      if (!total) chart.appendChild(el('<div class="chart-empty">Tes mots dictés apparaîtront ici, jour après jour.</div>'));
     }
 
-    // Dictionary (vocabulary): word + what the model hears instead
-    const dl = $('#dict-list'); dl.innerHTML = '';
-    $('#dict-count').textContent = `${state.dictionary.length} mot${state.dictionary.length > 1 ? 's' : ''}`;
-    if (!state.dictionary.length) dl.appendChild(el('<div class="empty">Aucun mot. Ajoute les noms que le modèle écorche.</div>'));
-    for (const v of state.dictionary) {
-      const sounds = (v.sounds || []).length
-        ? v.sounds.map((x) => `<span class="sound">${esc(x)}</span>`).join('')
-        : '<span class="sound none">casse uniquement</span>';
-      const node = el(`<div class="item vocab-item"><div><div class="word">${esc(v.word)}</div><div class="sounds">${sounds}</div></div>
-        <div class="actions"><button class="btn small" data-act="edit">Modifier</button><button class="btn small danger" data-act="del">Supprimer</button></div></div>`);
-      node.querySelector('[data-act=edit]').addEventListener('click', () => editVocab(v));
-      node.querySelector('[data-act=del]').addEventListener('click', () => ff.invoke('ff:dictionary', { action: 'remove', word: v.word }));
-      dl.appendChild(node);
+    // Recent
+    const recent = state.history.slice(0, 4);
+    const rsig = JSON.stringify(recent.map((h) => h.id)) + (recent[0] ? relShort(recent[0].ts) : '');
+    if (drawn.recent !== rsig) {
+      drawn.recent = rsig;
+      const list = $('#recent-list'); list.innerHTML = '';
+      if (!recent.length) list.appendChild(el(`<div class="empty compact"><strong>Aucune dictée pour l’instant</strong><span>Essaie le micro juste au-dessus, ou ton raccourci n’importe où.</span></div>`));
+      for (const h of recent) {
+        list.appendChild(el(`<div class="recent"><span class="when">${esc(relShort(h.ts))}</span><span class="text" title="${esc(h.text)}">${esc(h.text)}</span><span class="w">${plural(h.words, 'mot', 'mots')}</span></div>`));
+      }
+    }
+  }
+
+  function renderHistory() {
+    const q = $('#history-search').value.trim();
+    const items = q ? state.history.filter((h) => fold(h.text).includes(fold(q)) || fold(h.raw).includes(fold(q))) : state.history;
+    const sig = JSON.stringify([q, items.map((h) => h.id), [...openRaw], dayKey(new Date())]);
+    $('#history-sub').textContent = state.history.length
+      ? (q ? `${plural(items.length, 'résultat', 'résultats')} sur ${plural(state.history.length, 'dictée', 'dictées')}` : `${plural(state.stats.dictations, 'dictée', 'dictées')}, les plus récentes en premier.`)
+      : 'Tes dictées, les plus récentes en premier.';
+    $('#history-clear').disabled = !state.history.length;
+    if (drawn.history === sig) return;
+    drawn.history = sig;
+    const list = $('#history-list'); list.innerHTML = '';
+    if (!items.length) {
+      list.appendChild(el(q
+        ? `<div class="empty"><div class="empty-art">${icon('i-search')}</div><strong>Rien trouvé</strong><span>Aucune dictée ne contient « ${esc(q)} ».</span></div>`
+        : `<div class="empty"><div class="empty-art">${icon('i-mic')}</div><strong>Aucune dictée pour le moment</strong><span>Appuie sur ton raccourci, parle : tout ce que tu dictes arrive ici.</span></div>`));
+      return;
+    }
+    let group = null, groupKey = null, n = 0;
+    for (const h of items) {
+      const k = dayKey(h.ts);
+      if (k !== groupKey) {
+        groupKey = k;
+        group = el(`<div class="day-group"><div class="day-title">${esc(dayTitle(h.ts))}</div></div>`);
+        list.appendChild(group);
+      }
+      const rawDiffers = h.raw && h.raw.trim() !== h.text.trim();
+      const pasted = h.pasted === 'blocked' ? '<span class="pill warn">collage bloqué</span>' : h.pasted === 'clipboard' ? '<span class="pill">copié</span>' : '';
+      const node = el(`<div class="entry" style="animation-delay:${Math.min(n++, 12) * 18}ms">
+        <div>
+          <div class="text">${highlight(h.text, q)}</div>
+          <div class="meta">
+            <span class="pill">${esc(timeOf(h.ts))}</span>
+            <span class="pill">${plural(h.words, 'mot', 'mots')}</span>
+            ${h.latencyMs ? `<span class="pill">${(h.latencyMs / 1000).toFixed(1).replace('.', ',')} s</span>` : ''}
+            ${h.app ? `<span class="pill app">${esc(appName(h.app))}</span>` : ''}
+            ${h.language ? `<span class="pill">${esc(String(h.language).toUpperCase())}</span>` : ''}
+            ${pasted}
+            ${rawDiffers ? `<button class="raw-toggle" type="button">${openRaw.has(h.id) ? 'Masquer le brut' : 'Voir le brut'}</button>` : ''}
+          </div>
+          ${rawDiffers && openRaw.has(h.id) ? `<div class="raw"><b>Transcription brute :</b> ${highlight(h.raw, q)}</div>` : ''}
+        </div>
+        <div class="actions">
+          <button class="icon-btn" data-act="copy" title="Copier">${icon('i-copy')}</button>
+          <button class="icon-btn danger" data-act="del" title="Supprimer">${icon('i-trash')}</button>
+        </div></div>`);
+      node.querySelector('[data-act=copy]').addEventListener('click', async () => { await ff.invoke('ff:copy', h.text); toast('Copié dans le presse-papiers'); });
+      node.querySelector('[data-act=del]').addEventListener('click', () => ff.invoke('ff:history', { action: 'delete', id: h.id }));
+      const rt = node.querySelector('.raw-toggle');
+      if (rt) rt.addEventListener('click', () => { openRaw.has(h.id) ? openRaw.delete(h.id) : openRaw.add(h.id); renderHistory(); });
+      group.appendChild(node);
+    }
+  }
+
+  function renderDictionary() {
+    const q = $('#dict-search').value.trim();
+    const all = state.dictionary;
+    const items = q ? all.filter((v) => fold(v.word).includes(fold(q)) || (v.sounds || []).some((x) => fold(x).includes(fold(q)))) : all;
+    $('#dict-count').textContent = q ? `${items.length} sur ${plural(all.length, 'mot', 'mots')}` : plural(all.length, 'mot', 'mots');
+    const sig = JSON.stringify([q, items]);
+    if (drawn.dict !== sig) {
+      drawn.dict = sig;
+      const list = $('#dict-list'); list.innerHTML = '';
+      if (!items.length) {
+        list.appendChild(el(q
+          ? `<div class="empty"><div class="empty-art">${icon('i-search')}</div><strong>Aucun mot ne correspond</strong></div>`
+          : `<div class="empty"><div class="empty-art">${icon('i-book')}</div><strong>Ton dictionnaire est vide</strong><span>Ajoute les noms que le modèle écorche : marques, outils, prénoms.</span></div>`));
+      }
+      items.forEach((v, i) => {
+        const sounds = (v.sounds || []).length
+          ? v.sounds.map((x) => `<span class="sound">${esc(x)}</span>`).join('')
+          : '<span class="sound none">casse uniquement</span>';
+        const node = el(`<div class="vocab" style="animation-delay:${Math.min(i, 16) * 15}ms"><div class="word">${esc(v.word)}</div><div class="sounds">${sounds}</div>
+          <div class="actions"><button class="icon-btn" data-act="edit" title="Modifier">${icon('i-edit')}</button><button class="icon-btn danger" data-act="del" title="Supprimer">${icon('i-trash')}</button></div></div>`);
+        node.querySelector('[data-act=edit]').addEventListener('click', () => editVocab(v));
+        node.querySelector('[data-act=del]').addEventListener('click', async () => { await ff.invoke('ff:dictionary', { action: 'remove', word: v.word }); toast(`« ${v.word} » supprimé`); });
+        list.appendChild(node);
+      });
     }
     refreshPreview();
+  }
 
-    // Snippets
-    const sl = $('#snippet-list'); sl.innerHTML = '';
-    if (!state.snippets.length) sl.appendChild(el('<div class="empty">Aucun snippet. Exemple : « ma signature » → « Bonne journée et à très vite ! ».</div>'));
-    for (const sn of state.snippets) {
-      const node = el(`<div class="item"><div><span class="trigger">${esc(sn.trigger)}</span> → <span class="text">${esc(sn.expansion)}</span></div>
-        <div class="actions"><button class="btn small danger">Supprimer</button></div></div>`);
-      node.querySelector('button').addEventListener('click', () => ff.invoke('ff:snippets', { action: 'remove', id: sn.id }));
-      sl.appendChild(node);
-    }
+  function renderSnippets() {
+    const sig = JSON.stringify(state.snippets);
+    if (drawn.snip === sig) return;
+    drawn.snip = sig;
+    const list = $('#snippet-list'); list.innerHTML = '';
+    if (!state.snippets.length) list.appendChild(el(`<div class="empty"><div class="empty-art">${icon('i-bolt')}</div><strong>Aucun snippet</strong><span>Exemple : dis « ma signature », FreeFlow écrit « Bonne journée et à très vite ! ».</span></div>`));
+    state.snippets.forEach((sn, i) => {
+      const node = el(`<div class="snippet" style="animation-delay:${Math.min(i, 12) * 18}ms"><span class="trigger">${esc(sn.trigger)}</span><span class="to">${icon('i-arrow')}</span><span class="text">${esc(sn.expansion)}</span>
+        <div class="actions"><button class="icon-btn" data-act="edit" title="Modifier">${icon('i-edit')}</button><button class="icon-btn danger" data-act="del" title="Supprimer">${icon('i-trash')}</button></div></div>`);
+      node.querySelector('[data-act=edit]').addEventListener('click', () => editSnippet(sn));
+      node.querySelector('[data-act=del]').addEventListener('click', () => ff.invoke('ff:snippets', { action: 'remove', id: sn.id }));
+      list.appendChild(node);
+    });
+  }
 
-    // Settings
+  function renderSettings(s, st, eng) {
     updateShortcutUi();
-    document.querySelectorAll('input[name=mode]').forEach((r) => { r.checked = r.value === s.mode; });
+    $$('input[name=mode]').forEach((r) => { r.checked = r.value === s.mode; });
     const pttInput = document.querySelector('input[name=mode][value=ptt]');
     pttInput.disabled = !state.pttAvailable;
     $('#mode-ptt-label').classList.toggle('disabled', !state.pttAvailable);
-    $('#ptt-hint').textContent = state.pttAvailable ? 'Garde la touche enfoncée pendant que tu parles ; un appui bref passe en mains libres.' : 'Indisponible : le module uiohook-napi n’a pas pu être chargé.';
-    $('#set-language').value = s.language;
+    $('#ptt-hint').textContent = state.pttAvailable ? 'Garde la touche enfoncée ; un appui bref passe en mains libres.' : 'Indisponible : le module uiohook-napi n’a pas pu être chargé.';
+    for (const seg of $$('.segmented')) {
+      const v = s[seg.dataset.setting] || (seg.dataset.setting === 'theme' ? 'system' : 'auto');
+      seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.value === v));
+    }
     $('#set-autopaste').checked = !!s.autoPaste;
     $('#set-login').checked = !!s.launchAtLogin;
-    $('#eng-state').textContent = eng.ready ? 'Prêt' : eng.loading ? (eng.phase === 'downloading' ? state.loadingLabel : 'Chargement…') : 'Erreur';
-    $('#eng-device').textContent = eng.device ? (eng.device === 'cuda' ? 'GPU (CUDA)' : 'CPU') : '—';
-    $('#eng-model').textContent = eng.model ? `faster-whisper ${eng.model}` : '—';
+
+    const badge = $('#eng-badge');
+    badge.className = 'engine-badge' + (eng.ready ? ' ready' : !eng.loading ? ' error' : '');
+    $('#eng-state').textContent = eng.ready ? `Prêt, chargé en ${((eng.load_ms || 0) / 1000).toFixed(1).replace('.', ',')} s` : eng.loading ? (eng.phase === 'downloading' ? state.loadingLabel : 'Chargement du modèle…') : 'Moteur indisponible';
+    $('#eng-error').textContent = eng.error && !eng.ready ? eng.error : eng.ready ? `${fmtNum(eng.transcriptions || 0)} transcription${(eng.transcriptions || 0) > 1 ? 's' : ''} depuis le démarrage` : '';
+    $('#eng-device').textContent = eng.device ? (eng.device === 'cuda' ? 'Carte graphique (CUDA)' : 'Processeur') : '—';
+    $('#eng-model').textContent = eng.model ? `Whisper ${eng.model}` : '—';
     $('#eng-compute').textContent = eng.compute_type || '—';
     $('#eng-port').textContent = eng.port ? `127.0.0.1:${eng.port}${eng.external ? ' (externe)' : ''}` : '—';
-    $('#eng-latency').textContent = st.avgLatencyMs ? `${(st.avgLatencyMs / 1000).toFixed(1)} s` : '—';
-    $('#eng-error').textContent = eng.error && !eng.ready ? eng.error : '';
-    $('#eng-cache').textContent = s.modelCache;
+    $('#eng-latency').textContent = st.avgLatencyMs ? `${(st.avgLatencyMs / 1000).toFixed(1).replace('.', ',')} s` : '—';
+    $('#eng-cache').textContent = s.modelCache || '—';
+    $('#eng-cache').title = s.modelCache || '';
     $('#version').textContent = `FreeFlow ${state.version} · données : ${state.paths.userData}`;
     const micSel = $('#set-mic');
-    if (micSel.querySelector(`option[value="${s.microphoneId}"]`)) micSel.value = s.microphoneId;
-    renderTry();
+    if (micSel.querySelector(`option[value="${CSS.escape(s.microphoneId)}"]`)) micSel.value = s.microphoneId;
   }
 
   function renderTry() {
     const btn = $('#mic-btn'), status = $('#try-status');
-    btn.classList.toggle('listening', phase === 'listening' && hubDictation);
-    btn.classList.toggle('busy', (phase === 'transcribing' || phase === 'formatting') && hubDictation);
-    const map = { idle: 'Prêt', listening: 'Écoute… clique pour arrêter', transcribing: 'Transcription…', formatting: 'Mise en forme…', done: 'Terminé', error: 'Erreur' };
-    status.textContent = hubDictation || phase === 'idle' ? map[phase] || 'Prêt' : `Dictée en cours (${map[phase] || phase})`;
+    const mine = hubDictation;
+    btn.classList.toggle('listening', phase === 'listening' && mine);
+    btn.classList.toggle('busy', (phase === 'transcribing' || phase === 'formatting') && mine);
+    const map = { idle: 'Prêt', listening: 'Écoute… clique pour arrêter', transcribing: 'Transcription…', formatting: 'Mise en forme…', done: 'Inséré', error: 'Erreur' };
+    status.textContent = mine || phase === 'idle' ? map[phase] || 'Prêt' : `Dictée en cours ailleurs (${(map[phase] || phase).toLowerCase()})`;
+    status.classList.toggle('live', phase === 'listening' && mine);
+    btn.title = phase === 'listening' && mine ? 'Arrêter' : 'Dicter dans cette zone';
   }
 
   // ---- microphones
@@ -148,33 +337,42 @@
         o.value = d.deviceId; o.textContent = d.label || `Micro ${sel.options.length}`;
         sel.appendChild(o);
       }
-      if (sel.querySelector(`option[value="${current}"]`)) sel.value = current;
+      if (sel.querySelector(`option[value="${CSS.escape(current)}"]`)) sel.value = current;
     } catch { /* ignore */ }
   }
 
-  // ---- events
+  // ---- events: home
   $('#mic-btn').addEventListener('click', async () => {
     if (phase === 'idle') { hubDictation = true; $('#try-area').focus(); }
     await ff.invoke('ff:dictation-toggle', { toHub: true });
   });
-  $('#history-clear').addEventListener('click', () => { if (state && state.history.length && confirm('Effacer tout l’historique ?')) ff.invoke('ff:history', { action: 'clear' }); });
+  $('#try-clear').addEventListener('click', () => { $('#try-area').value = ''; $('#try-area').focus(); });
+
+  // ---- events: history
+  $('#history-search').addEventListener('input', () => state && renderHistory());
+  $('#history-clear').addEventListener('click', () => { if (state && state.history.length && confirm('Effacer tout l’historique ? Cette action est définitive.')) ff.invoke('ff:history', { action: 'clear' }); });
+
   // ---- dictionary form (add / edit) + live test
   function resetVocabForm() {
     const f = $('#dict-form');
     delete f.dataset.editing;
+    f.classList.remove('editing');
+    $('#dict-form-title').textContent = 'Nouveau mot';
     $('#dict-word').value = ''; $('#dict-sounds').value = '';
-    $('#dict-submit').textContent = 'Ajouter';
+    $('#dict-submit span').textContent = 'Ajouter';
     $('#dict-edit-cancel').hidden = true;
   }
   function editVocab(v) {
     const f = $('#dict-form');
     f.dataset.editing = v.word;
+    f.classList.add('editing');
+    $('#dict-form-title').textContent = `Modifier « ${v.word} »`;
     $('#dict-word').value = v.word;
     $('#dict-sounds').value = (v.sounds || []).join(', ');
-    $('#dict-submit').textContent = 'Enregistrer';
+    $('#dict-submit span').textContent = 'Enregistrer';
     $('#dict-edit-cancel').hidden = false;
-    $('#dict-sounds').focus();
     f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    $('#dict-sounds').focus();
   }
   $('#dict-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -182,11 +380,13 @@
     if (!word) { $('#dict-word').focus(); return; }
     const editing = $('#dict-form').dataset.editing;
     await ff.invoke('ff:dictionary', { action: editing ? 'update' : 'add', word, sounds: $('#dict-sounds').value, previous: editing });
-    toast(editing ? 'Mot mis à jour' : 'Mot ajouté');
+    toast(editing ? 'Mot mis à jour' : `« ${word} » ajouté`);
     resetVocabForm();
+    $('#dict-word').focus();
   });
   $('#dict-edit-cancel').addEventListener('click', resetVocabForm);
   $('#dict-restore').addEventListener('click', async () => { await ff.invoke('ff:dictionary', { action: 'restore-defaults' }); toast('Mots par défaut ajoutés'); });
+  $('#dict-search').addEventListener('input', () => state && renderDictionary());
   function refreshPreview() {
     clearTimeout(previewTimer);
     previewTimer = setTimeout(async () => {
@@ -198,13 +398,49 @@
     }, 120);
   }
   $('#dict-test').addEventListener('input', refreshPreview);
+
+  // ---- snippets form (add / edit)
+  function resetSnippetForm() {
+    const f = $('#snippet-form');
+    delete f.dataset.editing;
+    f.classList.remove('editing');
+    $('#snippet-form-title').textContent = 'Nouveau snippet';
+    $('#snippet-trigger').value = ''; $('#snippet-expansion').value = '';
+    $('#snippet-submit span').textContent = 'Ajouter le snippet';
+    $('#snippet-cancel').hidden = true;
+  }
+  function editSnippet(sn) {
+    const f = $('#snippet-form');
+    f.dataset.editing = sn.id;
+    f.classList.add('editing');
+    $('#snippet-form-title').textContent = 'Modifier le snippet';
+    $('#snippet-trigger').value = sn.trigger; $('#snippet-expansion').value = sn.expansion;
+    $('#snippet-submit span').textContent = 'Enregistrer';
+    $('#snippet-cancel').hidden = false;
+    f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    $('#snippet-expansion').focus();
+  }
   $('#snippet-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const trig = $('#snippet-trigger'), exp = $('#snippet-expansion');
-    if (trig.value.trim()) { await ff.invoke('ff:snippets', { action: 'add', trigger: trig.value, expansion: exp.value }); trig.value = ''; exp.value = ''; }
+    if (!trig.value.trim()) { trig.focus(); return; }
+    const id = $('#snippet-form').dataset.editing;
+    await ff.invoke('ff:snippets', { action: id ? 'update' : 'add', id, trigger: trig.value, expansion: exp.value });
+    toast(id ? 'Snippet mis à jour' : 'Snippet ajouté');
+    resetSnippetForm();
   });
-  document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => ff.invoke('ff:set-settings', { mode: r.value })));
-  $('#set-language').addEventListener('change', (e) => ff.invoke('ff:set-settings', { language: e.target.value }));
+  $('#snippet-cancel').addEventListener('click', resetSnippetForm);
+
+  // ---- settings
+  $$('input[name=mode]').forEach((r) => r.addEventListener('change', () => ff.invoke('ff:set-settings', { mode: r.value })));
+  for (const seg of $$('.segmented')) {
+    seg.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+      ff.invoke('ff:set-settings', { [seg.dataset.setting]: b.dataset.value });
+    });
+  }
   $('#set-mic').addEventListener('change', (e) => ff.invoke('ff:set-settings', { microphoneId: e.target.value }));
   $('#set-autopaste').addEventListener('change', (e) => ff.invoke('ff:set-settings', { autoPaste: e.target.checked }));
   $('#set-login').addEventListener('change', (e) => ff.invoke('ff:set-settings', { launchAtLogin: e.target.checked }));
@@ -263,7 +499,7 @@
       hint = sc.error || (state.shortcutOk ? 'Raccourci actif. Clique sur Enregistrer pour en choisir un autre.' : 'Ce raccourci ne fonctionne pas (déjà pris par une autre application ?). Enregistres-en un autre.');
     }
     $('#shortcut-hint').textContent = hint;
-    $('#shortcut-hint').classList.toggle('bad', !!(sc.error || (problem && !sc.recording)));
+    $('#shortcut-hint').classList.toggle('bad', !!(sc.error || (problem && !sc.recording) || (!sc.recording && !pending && !state.shortcutOk)));
     const rb = $('#shortcut-record');
     rb.innerHTML = sc.recording ? '<span class="rec-dot"></span>Arrêter' : 'Enregistrer';
     rb.classList.toggle('recording', sc.recording);
@@ -319,8 +555,8 @@
   ff.on('ff:state', (s) => { state = s; phase = s.phase || phase; render(); });
   ff.on('ff:dictation', (p) => {
     phase = p.phase;
-    if (phase === 'idle' || phase === 'error') { if (phase === 'idle') hubDictation = false; }
-    if (phase === 'error' && p.message) toast(p.message);
+    if (phase === 'idle') hubDictation = false;
+    if (phase === 'error' && p.message) toast(p.message, 'error');
     render();
   });
   ff.on('ff:insert', (text) => {
@@ -333,6 +569,9 @@
     ta.setSelectionRange(pos, pos);
     ta.focus();
   });
+
+  // Relative times ("il y a 3 min") stay fresh.
+  setInterval(() => { if (state) { drawn.recent = null; render(); } }, 60000);
 
   // ---- init
   ff.invoke('ff:get-state').then((s) => { state = s; phase = s.phase; render(); loadMics(); });
