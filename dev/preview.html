@@ -21,7 +21,10 @@
       const s = document.createElement('script'); s.src = `${page}.js`; document.body.appendChild(s);
       if (page === 'overlay') s.onload = () => {
         const phase = q.get('phase') || 'listening';
-        window.freeflow._emit('ff:overlay', { phase, demo: true, latencyMs: 640, pasted: 'pasted', message: phase === 'error' ? 'Collage bloqué, texte copié' : undefined, maxSec: 300 });
+        window.freeflow._emit('ff:overlay', phase === 'idle'
+          ? { phase, bar: true, hint: { key: 'fn', text: 'Maintiens pour dicter · ou clique ici' } }
+          : { phase, demo: true, latencyMs: 640, pasted: 'pasted', text: 'La réunion est demain à 11 h, et il faut que tu ramènes le dossier.', message: phase === 'error' ? 'Collage bloqué, texte copié' : undefined, maxSec: 300 });
+        if (q.get('hover')) setTimeout(() => document.getElementById('pill').dispatchEvent(new MouseEvent('mouseenter')), 300);
       };
     })();
   </script>

@@ -1,6 +1,6 @@
 # Composants tiers
 
-Le code de OxoFlow est sous licence MIT (voir `LICENSE`). L'installateur Windows embarque aussi les composants suivants, chacun sous sa propre licence.
+Le code de OxoFlow est sous licence MIT (voir `LICENSE`). L'installateur Windows et l'application Mac embarquent aussi les composants suivants, chacun sous sa propre licence.
 
 | Composant | Rôle | Licence |
 |---|---|---|
@@ -16,5 +16,8 @@ Le code de OxoFlow est sous licence MIT (voir `LICENSE`). L'installateur Windows
 | Python 3.11 | moteur compilé avec PyInstaller | PSF License |
 | NVIDIA cuBLAS 12 et cuDNN 9 | calcul sur carte graphique | redistribués selon le CUDA Toolkit EULA et le cuDNN Software License Agreement de NVIDIA |
 | [Figtree](https://github.com/erikdkennedy/figtree) | police de l'interface | SIL Open Font License 1.1 |
+| [Instrument Serif](https://github.com/Instrument/instrument-serif) | police des titres | SIL Open Font License 1.1 |
+| [MLX](https://github.com/ml-explore/mlx) / [mlx-whisper](https://github.com/ml-explore/mlx-examples) | transcription sur Mac (Apple Silicon) | MIT |
+| Poids Whisper convertis par [mlx-community](https://huggingface.co/mlx-community/whisper-large-v3-turbo) | modèle sur Mac, téléchargé au premier lancement | MIT |
 
 Les textes complets de licence des paquets Python sont fournis dans `resources\freeflow-stt\_internal\*.dist-info` du dossier installé.

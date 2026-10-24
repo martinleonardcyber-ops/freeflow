@@ -373,8 +373,7 @@ function updateTray() {
 // What the idle Flow bar says on hover.
 function barHint() {
   const s = settings.get();
-  if (s.shortcut === 'Fn') return s.mode === 'ptt' ? 'Maintiens fn pour dicter' : 'Appuie sur fn pour dicter';
-  return `${s.mode === 'ptt' ? 'Maintiens' : 'Appuie sur'} ${prettyShortcut(s.shortcut)} pour dicter`;
+  return { key: prettyShortcut(s.shortcut), text: s.mode === 'ptt' ? 'Maintiens pour dicter · ou clique ici' : 'Appuie pour dicter · ou clique ici' };
 }
 const flowBarOn = () => settings.get().flowBar !== false;
 
@@ -1108,7 +1107,7 @@ async function takeScreenshot(which, out) {
   else {
     showOverlay();
     const phase = which.split(':')[1] || 'listening';
-    overlaySend('ff:overlay', { phase, demo: true, message: phase === 'error' ? 'Collage bloqué' : undefined, latencyMs: 640 });
+    overlaySend('ff:overlay', { phase, demo: true, message: phase === 'error' ? 'Collage bloqué' : undefined, latencyMs: 640, pasted: 'pasted', text: 'La réunion est demain à 11 h, et il faut que tu ramènes le dossier.' });
   }
   await new Promise((r) => setTimeout(r, which.startsWith('overlay') ? 700 : 900));
   const img = await win.webContents.capturePage();

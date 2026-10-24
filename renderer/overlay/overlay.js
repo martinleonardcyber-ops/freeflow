@@ -1,13 +1,14 @@
 'use strict';
-// Overlay renderer: shows the pill states and captures the microphone
-// (getUserMedia -> AudioWorklet -> PCM16) while "listening".
+// Overlay renderer: the pill at the bottom of the screen. It captures the
+// microphone (getUserMedia -> AudioWorklet -> PCM16) while "listening" and
+// draws a live voice spectrum on a canvas; its size morphs between states.
 (() => {
   const pill = document.getElementById('pill');
-  const barsEl = document.getElementById('bars');
+  const row = document.getElementById('row');
   const labelEl = document.getElementById('label');
+  const previewEl = document.getElementById('preview');
   const timerEl = document.getElementById('timer');
-  const N_BARS = 23;                 // odd: the newest level sits in the middle and spreads outwards
-  const HALF = (N_BARS + 1) / 2;
+  const canvas = document.getElementById('wave');
   const LABELS = {
     listening: 'Écoute',
     transcribing: 'Transcription…',
@@ -15,11 +16,21 @@
     done: 'Terminé',
     error: 'Erreur',
   };
-  for (let i = 0; i < N_BARS; i++) barsEl.appendChild(document.createElement('span'));
-  const bars = Array.from(barsEl.children);
-  const levels = new Array(HALF).fill(0);
   let timerInt = null, startedAt = 0, maxSec = 300;
   let soundsOn = true, outCtx = null, lastPhase = 'idle';
+  let phase = 'idle', demo = false;
+
+  // ---- size morphing: the pill hugs its centred content
+  const HEIGHTS = { mini: 8, hint: 32, listening: 40, transcribing: 40, formatting: 40, done: 36, error: 36 };
+  let kind = 'mini';
+  function apply() {
+    const w = kind === 'mini' ? 46 : Math.ceil(row.getBoundingClientRect().width) + (kind === 'listening' ? 22 : 30);
+    pill.style.setProperty('--w', `${w}px`);
+    pill.style.setProperty('--h', `${HEIGHTS[kind] || 40}px`);
+  }
+  function fit(next) { kind = next; requestAnimationFrame(apply); }
+  // The content can still change size after a state switch (font loaded, timer text): follow it.
+  new ResizeObserver(() => apply()).observe(row);
 
   // ---- sound cues (synthesised: no audio files to ship)
   function chime(freqs, { step = 0.075, len = 0.11, gain = 0.05 } = {}) {
@@ -41,20 +52,80 @@
   }
 
   // ---- audio capture state
-  let ctx = null, stream = null, source = null, node = null, sink = null;
-  let chunks = [], total = 0, recording = false, demoTimer = null, raf = null;
+  let ctx = null, stream = null, source = null, node = null, sink = null, analyser = null;
+  let chunks = [], total = 0, recording = false;
   let skip = 0;   // samples to drop at the start: the start chime must not be transcribed
   let flushResolve = null;
 
-  function setBars() {
-    const mid = HALF - 1;
-    for (let i = 0; i < N_BARS; i++) {
-      const d = Math.abs(i - mid);                     // distance from the centre = age of the level
-      const taper = 1 - (d / HALF) * 0.45;             // edges a little calmer than the centre
-      const h = 3 + Math.round(levels[HALF - 1 - d] * 25 * taper);
-      bars[i].style.height = `${h}px`;
+  // ---- live spectrum
+  // 25 mirrored bars: the lowest voice band in the centre, higher bands outwards.
+  const BARS = 25, MID = (BARS - 1) / 2, BANDS = MID + 1;
+  const vals = new Float32Array(BARS);        // what is drawn (smoothed)
+  const bands = new Float32Array(BANDS);      // latest band energies, 0..1
+  let freq = null, edges = null, raf = null, t0 = performance.now();
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const CW = 132, CH = 26;
+  canvas.width = CW * dpr; canvas.height = CH * dpr;
+  const g2 = canvas.getContext('2d');
+  g2.scale(dpr, dpr);
+  const grad = g2.createLinearGradient(0, 0, CW, 0);
+  grad.addColorStop(0, '#9d85ff'); grad.addColorStop(0.5, '#e48cf0'); grad.addColorStop(1, '#ff8a66');
+
+  function readBands() {
+    if (!analyser) return;
+    if (!freq || freq.length !== analyser.frequencyBinCount) {
+      freq = new Uint8Array(analyser.frequencyBinCount);
+      const hz = ctx.sampleRate / analyser.fftSize;
+      // log-spaced edges from 90 Hz to 4.2 kHz (where speech lives)
+      edges = Array.from({ length: BANDS + 1 }, (_, k) => Math.max(1, Math.round((90 * Math.pow(4200 / 90, k / BANDS)) / hz)));
+    }
+    analyser.getByteFrequencyData(freq);
+    for (let b = 0; b < BANDS; b++) {
+      let sum = 0, n = 0;
+      for (let i = edges[b]; i < Math.max(edges[b] + 1, edges[b + 1]); i++) { sum += freq[i] || 0; n++; }
+      const v = (sum / n) / 255;
+      bands[b] = Math.min(1, Math.pow(v, 1.7) * (1.5 + b * 0.09));   // higher bands are naturally quieter
     }
   }
+
+  function demoBands(t) {
+    for (let b = 0; b < BANDS; b++) bands[b] = Math.max(0, (0.75 - b * 0.045) * (0.55 + 0.45 * Math.sin(t * 7 + b * 0.9)) * (0.7 + 0.3 * Math.sin(t * 2.3)));
+  }
+
+  function draw(now) {
+    const t = (now - t0) / 1000;
+    const listening = phase === 'listening';
+    const thinking = phase === 'transcribing' || phase === 'formatting';
+    if (listening) { if (demo) demoBands(t); else readBands(); }
+    let energy = 0;
+    for (let i = 0; i < BARS; i++) {
+      const d = Math.abs(i - MID);
+      let target;
+      if (listening) target = bands[Math.min(BANDS - 1, Math.round(d))] * (1 - (d / BARS) * 0.5);
+      else if (thinking) target = 0.08 + 0.42 * Math.pow(Math.max(0, Math.sin(i * 0.5 - t * 7)), 3);   // a wave sweeping across
+      else target = 0;
+      // fast attack, soft release
+      vals[i] += (target - vals[i]) * (target > vals[i] ? 0.5 : 0.14);
+      energy += vals[i];
+    }
+    if (listening) pill.style.setProperty('--lv', Math.min(1, energy / BARS * 2.2).toFixed(3));
+    g2.clearRect(0, 0, CW, CH);
+    const bw = 3, gap = (CW - BARS * bw) / (BARS - 1);
+    for (let i = 0; i < BARS; i++) {
+      const h = Math.max(3, 3 + vals[i] * (CH - 4));
+      const x = i * (bw + gap), y = (CH - h) / 2;
+      g2.globalAlpha = thinking ? 0.45 + vals[i] * 1.1 : 0.55 + Math.min(0.45, vals[i] * 1.2);
+      g2.fillStyle = thinking ? '#f6f4fb' : grad;
+      g2.beginPath();
+      g2.roundRect(x, y, bw, h, bw / 2);
+      g2.fill();
+    }
+    g2.globalAlpha = 1;
+    raf = requestAnimationFrame(draw);
+  }
+  function startDraw() { if (!raf) { t0 = performance.now(); raf = requestAnimationFrame(draw); } }
+  function stopDraw() { if (raf) cancelAnimationFrame(raf); raf = null; vals.fill(0); bands.fill(0); }
+
   function fmtTime(sec) { return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }
   function tick() {
     const el = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
@@ -68,32 +139,37 @@
     clearInterval(timerInt); tick(); timerInt = setInterval(tick, 250);
   }
   function stopTimer() { clearInterval(timerInt); timerInt = null; }
-  function pushLevel(v) {
-    levels.shift();
-    levels.push(Math.max(0, Math.min(1, v)));
-  }
-  function renderLoop() {
-    setBars();
-    raf = requestAnimationFrame(renderLoop);
-  }
-  function stopRender() { if (raf) cancelAnimationFrame(raf); raf = null; }
 
-  // Idle Flow bar: a small capsule that grows on hover; a click starts a hands-free dictation.
+  // ---- idle Flow bar: a thin capsule that grows on hover; a click starts a hands-free dictation.
   function showMini(hint) {
-    stopRender(); stopTimer(); stopDemoLevels();
+    stopDraw(); stopTimer();
+    phase = 'idle';
     pill.dataset.phase = 'idle';
     pill.classList.add('show', 'mini');
-    if (hint) document.getElementById('hint').textContent = hint;
+    if (hint) {
+      document.getElementById('hint-key').textContent = hint.key || 'fn';
+      document.getElementById('hint-text').textContent = hint.text || '';
+    }
+    fit(pill.classList.contains('hover') ? 'hint' : 'mini');
   }
-  pill.addEventListener('mouseenter', () => { pill.classList.add('hover'); window.freeflow.send('ff:overlay-mouse', true); });
-  pill.addEventListener('mouseleave', () => { pill.classList.remove('hover'); window.freeflow.send('ff:overlay-mouse', false); });
+  pill.addEventListener('mouseenter', () => {
+    pill.classList.add('hover'); window.freeflow.send('ff:overlay-mouse', true);
+    if (pill.classList.contains('mini')) fit('hint');
+  });
+  pill.addEventListener('mouseleave', () => {
+    pill.classList.remove('hover'); window.freeflow.send('ff:overlay-mouse', false);
+    if (pill.classList.contains('mini')) fit('mini');
+  });
   pill.addEventListener('click', () => window.freeflow.send('ff:overlay-click'));
 
-  function show(phase, payload = {}) {
+  function show(next, payload = {}) {
     pill.classList.remove('mini');
-    pill.dataset.phase = phase;
-    labelEl.textContent = LABELS[phase] || '';
-    if (phase === 'done') {
+    phase = next;
+    demo = !!payload.demo;
+    pill.dataset.phase = next;
+    labelEl.textContent = LABELS[next] || '';
+    previewEl.textContent = '';
+    if (next === 'done') {
       const verb = { pasted: 'Collé', clipboard: 'Copié', hub: 'Inséré', blocked: 'Copié' }[payload.pasted] || 'Terminé';
       labelEl.textContent = verb;
       if (payload.latencyMs) {
@@ -101,38 +177,30 @@
         small.textContent = `${(payload.latencyMs / 1000).toFixed(1).replace('.', ',')} s`;
         labelEl.appendChild(small);
       }
+      const text = String(payload.text || '').replace(/\s+/g, ' ').trim();
+      if (text) previewEl.textContent = `« ${text.length > 34 ? text.slice(0, 33).trimEnd() + '…' : text} »`;
     }
-    if (phase === 'error') labelEl.textContent = payload.message || 'Erreur';
+    if (next === 'error') labelEl.textContent = payload.message || 'Erreur';
     pill.classList.add('show');
-    if (phase === 'listening') {
-      if (!raf) renderLoop();
+    if (next === 'listening') {
+      startDraw();
       if (!timerInt || payload.startedAt) startTimer(payload.startedAt || (payload.demo ? Date.now() - 7000 : Date.now()), payload.maxSec);
-    } else { stopRender(); stopTimer(); }
-    if (payload.demo && phase === 'listening') startDemoLevels(); else stopDemoLevels();
+    } else stopTimer();
+    if (next === 'transcribing' || next === 'formatting') startDraw();      // the bars become the thinking wave
+    if (next === 'done' || next === 'error') stopDraw();
+    fit(next);
   }
   function hide() {
     pill.classList.remove('show', 'mini', 'hover');
-    stopRender();
+    phase = 'idle';
+    stopDraw();
     stopTimer();
-    stopDemoLevels();
   }
-
-  function startDemoLevels() {
-    stopDemoLevels();
-    let t = 0;
-    demoTimer = setInterval(() => {
-      t += 0.35;
-      pushLevel(0.25 + 0.45 * Math.abs(Math.sin(t)) * (0.6 + 0.4 * Math.random()));
-      setBars();
-    }, 50);
-  }
-  function stopDemoLevels() { if (demoTimer) clearInterval(demoTimer); demoTimer = null; }
 
   // ---- microphone
   async function startRecording({ deviceId } = {}) {
     await cleanupAudio();
     chunks = []; total = 0; recording = true;
-    levels.fill(0);
     const constraints = {
       audio: {
         channelCount: 1,
@@ -155,6 +223,12 @@
     catch { ctx = new AudioContext({ latencyHint: 'interactive' }); }
     await ctx.audioWorklet.addModule('pcm-worklet.js');
     source = ctx.createMediaStreamSource(stream);
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.55;
+    analyser.minDecibels = -85;
+    analyser.maxDecibels = -20;
+    source.connect(analyser);
     node = new AudioWorkletNode(ctx, 'ff-pcm', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
     node.port.onmessage = (e) => {
       if (e.data && e.data.done) { if (flushResolve) flushResolve(); return; }
@@ -164,13 +238,11 @@
         if (skip > 0) skip -= f32.length;
         else { chunks.push(f32); total += f32.length; }
       }
-      // RMS -> level for the waveform
+      // RMS -> level, mirrored in the hub's waveform
       let sum = 0;
       for (let i = 0; i < f32.length; i += 4) sum += f32[i] * f32[i];
       const rms = Math.sqrt(sum / (f32.length / 4));
-      const level = Math.min(1, Math.pow(rms * 6, 0.7));
-      pushLevel(level);
-      window.freeflow.send('ff:level', level);   // mirrored in the hub's waveform
+      window.freeflow.send('ff:level', Math.min(1, Math.pow(rms * 6, 0.7)));
     };
     sink = ctx.createGain();
     sink.gain.value = 0; // worklet needs a path to the destination to keep processing
@@ -207,10 +279,11 @@
     recording = false;
     try { if (node) { node.port.onmessage = null; node.disconnect(); } } catch { /* ignore */ }
     try { if (source) source.disconnect(); } catch { /* ignore */ }
+    try { if (analyser) analyser.disconnect(); } catch { /* ignore */ }
     try { if (sink) sink.disconnect(); } catch { /* ignore */ }
     try { if (stream) stream.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
     try { if (ctx) await ctx.close(); } catch { /* ignore */ }
-    node = source = sink = stream = ctx = null;
+    node = source = sink = stream = ctx = analyser = null;
   }
 
   // ---- IPC
@@ -249,6 +322,5 @@
 
   window.freeflow.on('ff:rec-cancel', () => { cleanupAudio(); hide(); });
 
-  setBars();
   window.freeflow.send('ff:overlay-ready');
 })();

@@ -15,9 +15,19 @@
   let micTest = null;            // settings > Micro > Tester (declared early: navigate() stops it)
 
   // ---- navigation
+  function placeIndicator() {
+    const active = document.querySelector('.nav-item.active');
+    const ind = $('#nav-indicator');
+    if (!active || !ind) return;
+    ind.style.transform = `translateY(${active.offsetTop}px)`;
+    ind.style.height = `${active.offsetHeight}px`;
+    $('#nav').classList.add('glide');
+  }
+  window.addEventListener('resize', placeIndicator);
   function navigate(section) {
     if (!document.getElementById(`section-${section}`)) section = 'home';
     $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.section === section));
+    placeIndicator();
     $$('.section').forEach((s) => s.classList.toggle('active', s.id === `section-${section}`));
     $('#content').scrollTop = 0;
     if (section === 'settings') refreshAi();
@@ -60,6 +70,20 @@
     if (diff < 3600) return `il y a ${Math.round(diff / 60)} min`;
     if (dayKey(iso) === dayKey(new Date())) return timeOf(iso);
     return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  }
+  // Numbers roll up to a new value (and only when it changes).
+  function countTo(node, value, format = fmtNum) {
+    const from = Number(node.dataset.v || 0);
+    if (from === value && node.dataset.v !== undefined) return;
+    node.dataset.v = value;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || from === value) { node.textContent = format(value); return; }
+    const t0 = performance.now(), dur = 700;
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      node.textContent = format(Math.round(from + (value - from) * e));
+      if (k < 1 && Number(node.dataset.v) === value) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
   function fmtMinutes(min) {
     if (min < 60) return `${fmtNum(min)} min`;
@@ -165,7 +189,8 @@
   function renderHome(s, st, eng) {
     const hour = new Date().getHours();
     const name = state.user ? state.user.charAt(0).toUpperCase() + state.user.slice(1) : '';
-    $('#greeting').textContent = `${hour < 18 && hour >= 5 ? 'Bonjour' : 'Bonsoir'}${name ? ', ' + name : ''}`;
+    const hello = hour < 18 && hour >= 5 ? 'Bonjour' : 'Bonsoir';
+    $('#greeting').innerHTML = name ? `${hello}, <em>${esc(name)}</em>` : esc(hello);
     const busy = phase === 'transcribing' || phase === 'formatting';
     const heroState = phase === 'listening' ? 'listening' : busy ? 'busy' : eng.ready ? 'ready' : eng.loading ? 'loading' : 'error';
     $('#hero').dataset.state = heroState;
@@ -181,12 +206,12 @@
       ? `${gesture}, dans un mail, Slack, Notion ou ton code. Le texte s’écrit là où est ton curseur.`
       : `${gesture} : le texte est copié, colle-le avec ${MAC ? '⌘V' : 'Ctrl + V'}.`;
 
-    $('#stat-today').textContent = fmtNum(st.wordsToday);
+    countTo($('#stat-today'), st.wordsToday);
     $('#stat-total-foot').textContent = `${fmtNum(st.totalWords)} mots au total`;
-    $('#stat-wpm').textContent = fmtNum(st.avgWpm);
-    $('#stat-saved').textContent = fmtMinutes(st.minutesSaved || 0);
+    countTo($('#stat-wpm'), st.avgWpm);
+    countTo($('#stat-saved'), st.minutesSaved || 0, fmtMinutes);
     $('#chip-saved').title = `Estimation : temps de frappe à ${st.typingWpm || 40} mots/min moins le temps passé à parler`;
-    $('#stat-streak').textContent = fmtNum(st.streak || 0);
+    countTo($('#stat-streak'), st.streak || 0);
     $('#stat-streak-unit').textContent = (st.streak || 0) > 1 ? 'jours' : 'jour';
     $('#stat-count-foot').textContent = plural(st.dictations, 'dictée', 'dictées');
     $('#home-sub').textContent = st.wordsToday
