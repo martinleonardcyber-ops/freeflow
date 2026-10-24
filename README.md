@@ -19,6 +19,7 @@ Gratuit, open source, sans compte, sans abonnement, et rien ne quitte ton PC.</p
 - **Transcription locale** : le modèle Whisper `large-v3` tourne sur ta carte graphique NVIDIA (moins d'une seconde pour 10 secondes de voix sur une RTX récente). Sans carte NVIDIA, OxoFlow passe tout seul sur le processeur avec un modèle plus léger.
 - **Vocabulaire** : apprends-lui tes mots. « n huit n » devient `n8n`, « x field » devient `Higgsfield`. Pour chaque mot, tu indiques ce que le modèle entend à la place ; un champ de test montre la correction en direct.
 - **Snippets** : un mot déclencheur remplacé par un texte (ton adresse, une signature, un lien…).
+- **Mise en forme IA, en local (option)** : avec LM Studio (ou Ollama) lancé sur la machine, un modèle de langage retire les hésitations et, quand tu te reprends (« à 10 h, non, plutôt 11 h »), ne garde que la correction. Rien n'est envoyé en ligne : seuls les serveurs `127.0.0.1` sont acceptés, et une réponse qui ne ressemble pas à ta dictée est écartée. Compte environ 1 s de plus par dictée.
 - **Mise en forme** : les « euh » et « hum » sont retirés, les majuscules, les espaces avant `? ! ; :` et la casse de tes mots sont corrigées.
 - **Historique** : toutes tes dictées regroupées par jour, avec recherche, l'application cible, le temps de transcription et la transcription brute avant mise en forme.
 - **Tableau de bord** : mots du jour, vitesse, série de jours, activité sur 14 jours et temps gagné (estimation face à une frappe à 40 mots/min).
@@ -65,6 +66,14 @@ git clone https://github.com/martinleonardcyber-ops/freeflow.git && cd freeflow
 npm run setup:mac    # Node, moteur Python (stt/.venv), collage Swift
 npm start
 ```
+
+Pour une vraie application (`OxoFlow.app`, moteur Python embarqué, ~1 Go) :
+
+```bash
+npm run package:mac -- --install    # construit et copie dans /Applications
+```
+
+Au premier lancement de l'app, autorise **OxoFlow** dans *Réglages Système › Confidentialité et sécurité › Accessibilité* (coller avec ⌘V et écouter la touche fn) ; macOS demande aussi le micro.
 
 Il faut Node, Python 3.12 (ou `uv`) et les outils en ligne de commande Xcode (`xcode-select --install`). Au premier lancement :
 

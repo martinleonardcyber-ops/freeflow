@@ -274,6 +274,27 @@
       </div>
 
       <div class="group">
+        <div class="group-title">Mise en forme IA <span class="badge">locale</span></div>
+        <div class="card rows">
+          <label class="row-item toggle-row">
+            <div><div class="row-title">Nettoyer avec un modèle de langage</div><div class="row-sub">Retire les hésitations et, quand tu te reprends (« à 10 h, non, plutôt 11 h »), garde la correction. Tourne sur ce Mac via LM Studio : rien n’est envoyé en ligne.</div></div>
+            <span class="toggle"><input type="checkbox" id="set-ai"><span></span></span>
+          </label>
+          <div class="row-item">
+            <div><div class="row-title">Modèle</div><div class="row-sub" id="ai-status">Recherche d’un serveur local…</div></div>
+            <div class="select"><select id="set-aimodel"><option value="">Automatique</option></select></div>
+          </div>
+          <div class="row-item ai-test-row">
+            <div class="ai-test">
+              <label class="input"><span>Essayer sur une phrase telle qu’on la dicte</span><input type="text" id="ai-test" value="euh la réunion c’est demain à 10 h non plutôt à 11 h et faut que tu ramènes le le dossier n8n" autocomplete="off"></label>
+              <div class="test-out muted" id="ai-test-out">Le résultat s’affiche ici.</div>
+            </div>
+            <button class="btn" type="button" id="ai-test-btn">Tester</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
         <div class="group-title">Apparence</div>
         <div class="card rows">
           <div class="row-item">

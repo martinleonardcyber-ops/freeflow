@@ -13,6 +13,7 @@ const { pcm16ToWav, wavDurationMs } = require('./lib/wav');
 const { Sidecar } = require('./lib/sidecar');
 const { paste } = require('./lib/paste');
 const { DEFAULT_VOCAB, normalizeVocab, parseSounds } = require('./lib/vocab');
+const { aiFormat, discover, pickModel } = require('./lib/aiformat');
 const { execFile, spawn } = require('child_process');
 
 app.setName('OxoFlow');
@@ -40,6 +41,9 @@ const DEFAULT_SETTINGS = {
   theme: 'system',              // 'system' | 'light' | 'dark'
   sounds: true,                 // short cues when listening starts / stops
   flowBar: true,                // small pill always visible at the bottom of the screen
+  aiFormat: false,              // clean-up by a LOCAL language model (LM Studio...), rules as fallback
+  aiModel: '',                  // '' = pick one automatically
+  aiEndpoint: '',               // '' = find a local OpenAI-compatible server (ports 1234, 8080, 11434)
   fnOffered: false,             // macOS: the old Ctrl+Alt+Space default was switched to fn once
   vocabSeeded: false,           // default vocabulary (n8n, Higgsfield...) added once
 };
@@ -520,7 +524,13 @@ async function runPipeline(wav, opts = {}) {
   try {
     const res = await sidecar.transcribe(wav, { lang: s.language, hints: dictionary.get().map((e) => e.word) });
     setPhase('formatting');
-    const text = formatText(res.text, { language: res.language, snippets: snippets.get(), dictionary: dictionary.get() });
+    // Local AI first (disfluencies, self-corrections), then the rules (vocabulary, snippets, typography).
+    let ai = null;
+    if (s.aiFormat && res.text) {
+      try { ai = await aiFormat(res.text, { endpoint: s.aiEndpoint, model: s.aiModel, vocabulary: dictionary.get().map((e) => e.word) }); log(`ai format: ${ai.model} ${ai.ms} ms`); }
+      catch (e) { log('ai format skipped:', e.message); }
+    }
+    const text = formatText(ai ? ai.text : res.text, { language: res.language, snippets: snippets.get(), dictionary: dictionary.get() });
     if (!text) {
       setPhase('error', { message: 'Rien entendu' });
       scheduleIdle(1200);
@@ -556,6 +566,7 @@ async function runPipeline(wav, opts = {}) {
       language: res.language,
       app: pasteOutcome ? pasteOutcome.process : (opts.toHub ? 'OxoFlow' : null),
       pasted: pasteOutcome ? pasteOutcome.outcome : (opts.toHub ? 'hub' : 'clipboard'),
+      ai: ai ? { model: ai.model, ms: ai.ms } : null,
     };
     history.set([entry, ...history.get()].slice(0, 2000));
     updateTray();
@@ -814,6 +825,7 @@ ipcMain.handle('ff:set-settings', (_e, patch) => {
   const next = settings.update(patch || {});
   if (next.shortcut !== before.shortcut || next.mode !== before.mode) registerShortcut();
   if (next.theme !== before.theme) applyTheme(next.theme);
+  if (next.aiFormat && (!before.aiFormat || next.aiModel !== before.aiModel)) warmAi();
   if (next.flowBar !== before.flowBar || next.shortcut !== before.shortcut || next.mode !== before.mode) {
     if (next.flowBar !== false && dictation.phase === 'idle') { showOverlay(); setPhase('idle'); }
     else if (next.flowBar === false && dictation.phase === 'idle' && overlay) overlay.hide();
@@ -910,6 +922,26 @@ ipcMain.handle('ff:dictation-cancel', () => { cancelDictation(); return dictatio
 ipcMain.handle('ff:copy', async (_e, text) => { await clipboard.writeText(String(text || '')); return true; });
 ipcMain.handle('ff:open-logs', () => shell.openPath(logDir));
 // macOS: ask for the microphone (system dialog the first time, the settings pane once refused).
+// Local AI formatting: which server/model would be used, and a dry run on typed text.
+ipcMain.handle('ff:ai-status', async () => {
+  const s = settings.get();
+  const found = await discover(s.aiEndpoint, { fresh: true });
+  return { ...found, model: pickModel(found.models, s.aiModel) };
+});
+ipcMain.handle('ff:ai-test', async (_e, text) => {
+  const s = settings.get();
+  try {
+    const r = await aiFormat(String(text || ''), { endpoint: s.aiEndpoint, model: s.aiModel, vocabulary: dictionary.get().map((e) => e.word), timeoutMs: 30000 });
+    return { ok: true, model: r.model, ms: r.ms, text: formatText(r.text, { language: s.language === 'en' ? 'en' : 'fr', snippets: snippets.get(), dictionary: dictionary.get() }) };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+// The first request loads the model (several seconds): do it ahead of the first dictation.
+function warmAi() {
+  const s = settings.get();
+  if (!s.aiFormat) return;
+  aiFormat('bonjour, ceci est un essai', { endpoint: s.aiEndpoint, model: s.aiModel, timeoutMs: 60000 })
+    .then((r) => log(`ai format ready: ${r.model} (${r.ms} ms)`)).catch((e) => log('ai format warm-up:', e.message));
+}
 ipcMain.handle('ff:open-keyboard-settings', () => shell.openExternal('x-apple.systempreferences:com.apple.Keyboard-Settings.extension'));
 ipcMain.handle('ff:mic-prompt', async () => {
   if (!IS_MAC) return true;
@@ -1007,6 +1039,8 @@ async function takeScreenshot(which, out) {
   if (win === hub) {
     // "hub:home@560" = the home section scrolled down by 560 px
     showHub();
+    // capturePage cannot see macOS vibrancy: give the sidebar an opaque background in captures.
+    hub.webContents.executeJavaScript(`document.documentElement.dataset.capture = '1'`).catch(() => {});
     const [section, scroll] = (which.split(':')[1] || '').split('@');
     if (section) hub.webContents.send('ff:navigate', section);
     if (scroll) setTimeout(() => hub.webContents.executeJavaScript(`document.querySelector('#content').scrollTop = ${Number(scroll) || 0}`), 400);
@@ -1046,7 +1080,7 @@ async function runDevCommands() {
       const dir = typeof argv.screenshots === 'string' ? argv.screenshots : path.join(ROOT, 'screenshots');
       if (argv['wait-ready']) await waitReady(240000);
       await new Promise((r) => setTimeout(r, 1200));
-      for (const which of ['hub:home', 'hub:home@560', 'hub:history', 'hub:dictionary', 'hub:snippets', 'hub:settings', 'overlay:listening', 'overlay:transcribing', 'overlay:done', 'overlay:error']) {
+      for (const which of ['hub:home', 'hub:home@560', 'hub:history', 'hub:settings@1050', 'hub:dictionary', 'hub:snippets', 'hub:settings', 'overlay:listening', 'overlay:transcribing', 'overlay:done', 'overlay:error']) {
         const out = path.join(dir, which.replace(':', '-').replace('@', '-') + '.png');
         await takeScreenshot(which, out);
         console.log('SCREENSHOT ' + out);
@@ -1093,7 +1127,10 @@ app.whenReady().then(async () => {
 
   if (IS_MAC) {
     // The first getUserMedia would ask anyway; asking up front avoids losing the first dictation to the dialog.
-    try { if (systemPreferences.getMediaAccessStatus('microphone') !== 'granted') log('microphone access:', await systemPreferences.askForMediaAccess('microphone')); } catch (e) { log('microphone access:', e.message); }
+    // Not awaited: an unanswered system dialog must not hold the whole app back.
+    if (!DEV_MODE && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
+      systemPreferences.askForMediaAccess('microphone').then((ok) => { log('microphone access:', ok); pushState(); }).catch((e) => log('microphone access:', e.message));
+    }
   }
   try { uiohookMod = require('uiohook-napi'); pttAvailable = !!(uiohookMod && uiohookMod.uIOhook); } catch (e) { pttAvailable = false; log('uiohook-napi unavailable:', e.message); }
   // macOS: the keyboard hook needs the Accessibility permission; without it, push-to-talk stays off.
@@ -1123,4 +1160,5 @@ app.whenReady().then(async () => {
     sidecar.start();
   }
   if (DEV_MODE) runDevCommands();
+  warmAi();
 });

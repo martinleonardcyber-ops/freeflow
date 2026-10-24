@@ -20,3 +20,4 @@ native/*.exe
 stt/.venv/
 native/PasteHelperMac
 native/FnKeyMac
+build/

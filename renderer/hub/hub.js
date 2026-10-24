@@ -19,6 +19,7 @@
     $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.section === section));
     $$('.section').forEach((s) => s.classList.toggle('active', s.id === `section-${section}`));
     $('#content').scrollTop = 0;
+    if (section === 'settings') refreshAi();
     try { localStorage.setItem('ff.section', section); } catch { /* ignore */ }
   }
   $$('.nav-item').forEach((b) => b.addEventListener('click', () => navigate(b.dataset.section)));
@@ -249,6 +250,7 @@
             ${h.latencyMs ? `<span class="pill">${(h.latencyMs / 1000).toFixed(1).replace('.', ',')} s</span>` : ''}
             ${h.language ? `<span class="pill">${esc(String(h.language).toUpperCase())}</span>` : ''}
             ${pasted}
+            ${h.ai ? `<span class="pill ai" title="Mis en forme par ${esc(h.ai.model)} en ${(h.ai.ms / 1000).toFixed(1).replace('.', ',')} s">IA</span>` : ''}
             ${rawDiffers ? `<button class="raw-toggle" type="button">${openRaw.has(h.id) ? 'Masquer le brut' : 'Voir le brut'}</button>` : ''}
           </div>
           ${rawDiffers && openRaw.has(h.id) ? `<div class="raw"><b>Transcription brute :</b> ${highlight(h.raw, q)}</div>` : ''}
@@ -347,6 +349,7 @@
     $('#set-login').checked = !!s.launchAtLogin;
     $('#set-sounds').checked = s.sounds !== false;
     $('#set-flowbar').checked = s.flowBar !== false;
+    $('#set-ai').checked = !!s.aiFormat;
 
     const badge = $('#eng-badge');
     badge.className = 'engine-badge' + (eng.ready ? ' ready' : !eng.loading ? ' error' : '');
@@ -514,6 +517,27 @@
   $('#set-login').addEventListener('change', (e) => ff.invoke('ff:set-settings', { launchAtLogin: e.target.checked }));
   $('#set-sounds').addEventListener('change', (e) => ff.invoke('ff:set-settings', { sounds: e.target.checked }));
   $('#set-flowbar').addEventListener('change', (e) => ff.invoke('ff:set-settings', { flowBar: e.target.checked }));
+
+  // ---- local AI formatting
+  async function refreshAi() {
+    const st = await ff.invoke('ff:ai-status');
+    const sel = $('#set-aimodel');
+    const wanted = state ? state.settings.aiModel : '';
+    sel.innerHTML = '<option value="">Automatique</option>' + (st.models || []).map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+    sel.value = (st.models || []).includes(wanted) ? wanted : '';
+    $('#ai-status').textContent = st.endpoint
+      ? `${st.endpoint.replace(/^https?:\/\//, '').replace(/\/v1$/, '')} · ${st.model || 'aucun modèle'}${sel.value ? '' : ' (auto)'}`
+      : 'Aucun serveur local trouvé : lance LM Studio (ou Ollama) et charge un modèle.';
+  }
+  $('#set-ai').addEventListener('change', async (e) => { await ff.invoke('ff:set-settings', { aiFormat: e.target.checked }); if (e.target.checked) toast('Mise en forme IA activée'); });
+  $('#set-aimodel').addEventListener('change', async (e) => { await ff.invoke('ff:set-settings', { aiModel: e.target.value }); refreshAi(); });
+  $('#ai-test-btn').addEventListener('click', async () => {
+    const out = $('#ai-test-out'), btn = $('#ai-test-btn');
+    btn.disabled = true; out.classList.add('muted'); out.textContent = 'Le modèle réfléchit… (le premier essai le charge en mémoire)';
+    const r = await ff.invoke('ff:ai-test', $('#ai-test').value);
+    btn.disabled = false; out.classList.toggle('muted', !r.ok);
+    out.textContent = r.ok ? `${r.text}  ·  ${(r.ms / 1000).toFixed(1).replace('.', ',')} s` : `Indisponible : ${r.error}`;
+  });
   $('#step-mic-btn').addEventListener('click', async () => { if (await ff.invoke('ff:mic-prompt')) toast('Micro autorisé'); });
   $('#step-fn-btn').addEventListener('click', () => ff.invoke('ff:open-keyboard-settings'));
   $('#shortcut-fn').addEventListener('click', async () => {

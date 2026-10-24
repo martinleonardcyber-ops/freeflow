@@ -583,6 +583,12 @@ nav { display: flex; flex-direction: column; gap: 2px; }
 .hero.live .hero-wave span { animation: none; transform: scaleY(var(--lv, 1)); transition: transform 90ms linear; }
 .mic-btn.listening::before { content: ''; position: absolute; inset: -6px; border-radius: 50%; background: radial-gradient(circle, rgba(255, 106, 69, 0.35), transparent 70%); transform: scale(var(--lv, 1)); transition: transform 90ms linear; z-index: -1; }
 
+/* ---------- Local AI formatting */
+.badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--iris-soft); color: var(--iris); font-size: 10.5px; letter-spacing: 0.04em; vertical-align: 1px; }
+.ai-test-row { align-items: flex-end; }
+.ai-test { flex: 1; display: grid; gap: 10px; min-width: 0; }
+.pill.ai { color: #fff; background: var(--grad); }
+
 /* ---------- Permission banner (macOS Accessibility) */
 .banner {
   display: flex; align-items: center; gap: 14px; margin-bottom: 16px; padding: 14px 16px; border-radius: var(--r);
@@ -598,6 +604,8 @@ nav { display: flex; flex-direction: column; gap: 2px; }
 /* ---------- macOS: translucent sidebar under the traffic lights */
 .titlebar-drag { display: none; }
 :root[data-platform="darwin"] body { background: transparent; }
+:root[data-platform="darwin"][data-capture] body { background: var(--bg); }
+:root[data-capture] #setup { display: none !important; }   /* README captures show the app after onboarding */
 :root[data-platform="darwin"] .sidebar { padding-top: 50px; -webkit-app-region: drag; }
 :root[data-platform="darwin"] .sidebar button, :root[data-platform="darwin"] .sidebar .engine, :root[data-platform="darwin"] .sidebar .side-shortcut { -webkit-app-region: no-drag; }
 :root[data-platform="darwin"] .titlebar-drag { display: block; position: fixed; top: 0; left: 238px; right: 0; height: 10px; -webkit-app-region: drag; z-index: 5; }

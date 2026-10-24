@@ -102,6 +102,8 @@
       return state.phase;
     },
     'ff:shortcut-test': () => ({ ok: true }),
+    'ff:ai-status': () => ({ endpoint: 'http://127.0.0.1:8080/v1', models: ['hermes-3-llama-3.1-8b', 'qwen/qwen3.5-9b'], model: 'hermes-3-llama-3.1-8b' }),
+    'ff:ai-test': () => ({ ok: true, model: 'hermes-3-llama-3.1-8b', ms: 640, text: 'La réunion, c’est demain à 11 h, et il faut que tu ramènes le dossier n8n.' }),
     'ff:mic-prompt': () => { state.microphone = 'granted'; push(); return true; },
     'ff:accessibility-prompt': () => { state.accessibility = true; push(); return true; },
     'ff:shortcut-suspend': (on) => ({ suspended: on, ok: true }),
