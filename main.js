@@ -125,6 +125,13 @@ function initStores() {
     vocab = [...vocab, ...normalizeVocab(DEFAULT_VOCAB).filter((e) => !have.has(e.word.toLowerCase()))];
     settings.update({ vocabSeeded: true });
   }
+  // Renamed app: FreeFlow's own entry becomes OxoFlow's, and Oxoria joins (once, keeps user edits).
+  if (!settings.get().vocabOxo) {
+    const defaults = normalizeVocab(DEFAULT_VOCAB);
+    vocab = vocab.filter((e) => e.word.toLowerCase() !== 'freeflow');
+    for (const w of ['OxoFlow', 'Oxoria']) if (!vocab.some((e) => e.word.toLowerCase() === w.toLowerCase())) vocab.push(defaults.find((e) => e.word === w));
+    settings.update({ vocabOxo: true });
+  }
   dictionary.set(vocab);
   snippets = createStore(path.join(userData, 'snippets.json'), []);
   history = createStore(path.join(userData, 'history.json'), []);
