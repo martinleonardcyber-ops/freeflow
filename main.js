@@ -341,6 +341,7 @@ function recentMenu() {
   const copy = async (t) => { await clipboard.writeText(t); log('tray: copied a past dictation'); };
   return [
     { label: 'Copier la dernière dictée', enabled: !!recent.length, click: () => recent[0] && copy(recent[0].text) },
+    { label: `Coller la dernière dictée (${IS_MAC ? '⌃⌘V' : 'Ctrl+Alt+Maj+V'})`, enabled: !!recent.length, click: () => pasteLast().catch((e) => log('paste last:', e.message)) },
     { label: 'Dictées récentes', enabled: recent.length > 1, submenu: recent.map((h) => ({ label: short(h.text), click: () => copy(h.text) })) },
   ];
 }
@@ -752,10 +753,50 @@ function startFnHook(mode) {
   return true;
 }
 
+// "Coller la dernière dictée" (Wispr's paste-last-transcript): the latest
+// dictation goes back where the cursor is, the clipboard is restored after.
+const PASTE_LAST = IS_MAC ? 'Control+Command+V' : 'Control+Alt+Shift+V';
+async function pasteLast() {
+  const last = history.get()[0];
+  if (!last || !last.text) return;
+  const previous = await saveClipboard();
+  await clipboard.writeText(last.text);
+  const r = await paste(pasteHelperPath(), { delayMs: settings.get().pasteDelayMs, log });
+  log(`paste last: ${r.outcome}`);
+  if (r.outcome === 'pasted') {
+    setTimeout(async () => { try { if ((await clipboard.readText()) === last.text) await restoreClipboard(previous); } catch (e) { log('clipboard restore:', e.message); } }, settings.get().restoreClipboardMs || 400);
+  } else if (r.reason === 'accessibility') flashOverlay('error', 'Autorise OxoFlow dans Accessibilité · texte copié', 2200);
+}
+
+// Every 1.5 s, cheap checks that no OS event reports:
+//  - the Accessibility permission was just granted: re-arm fn / push-to-talk without a restart;
+//  - the cursor moved to another display: the idle Flow bar follows it.
+let lastTrusted = null, lastDisplayId = null;
+function watchdog() {
+  if (IS_MAC) {
+    const trusted = systemPreferences.isTrustedAccessibilityClient(false);
+    if (trusted !== lastTrusted) {
+      const gained = lastTrusted === false && trusted;
+      lastTrusted = trusted;
+      if (gained) {
+        log('accessibility: granted, re-arming the shortcut');
+        if (uiohookMod && uiohookMod.uIOhook) pttAvailable = true;
+        registerShortcut();
+      }
+      pushState();
+    }
+  }
+  if (overlay && dictation.phase === 'idle' && flowBarOn() && overlay.isVisible()) {
+    const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    if (d.id !== lastDisplayId) { lastDisplayId = d.id; positionOverlay(); }
+  }
+}
+
 function registerShortcut() {
   globalShortcut.unregisterAll();
   stopHook();
   stopFnHook();
+  try { if (!shortcutSuspended) globalShortcut.register(PASTE_LAST, () => { pasteLast().catch((e) => log('paste last:', e.message)); }); } catch (e) { log('paste-last shortcut:', e.message); }
   shortcutOk = false;
   if (shortcutSuspended) { log('shortcut: suspended while recording'); updateTray(); return; }
   const s = settings.get();
@@ -1043,6 +1084,14 @@ async function uiTest(dir) {
   console.log('UI preview=' + await js(`document.querySelector('#dict-test-out').textContent`));
   await shot('08-dictionary');
   console.log('UI vocab entries=' + dictionary.get().length);
+  // microphone test meter (run with a fake capture device to get a level)
+  wc.send('ff:navigate', 'settings');
+  await new Promise((r) => setTimeout(r, 500));
+  await js(`document.querySelector('#mic-test').click()`);
+  await new Promise((r) => setTimeout(r, 1500));
+  console.log('UI mic meter=' + await js(`document.querySelector('#mic-meter-fill').style.width + ' visible=' + !document.querySelector('#mic-meter').hidden`));
+  await shot('09-mic-meter');
+  await js(`document.querySelector('#mic-test').click()`);
 }
 
 async function takeScreenshot(which, out) {
@@ -1161,6 +1210,7 @@ app.whenReady().then(async () => {
   createHub();
   registerShortcut();
   screen.on('display-metrics-changed', positionOverlay);
+  setInterval(watchdog, 1500);
   if (s.showHubAtStart || DEV_MODE) showHub();
   else if (IS_MAC && app.dock) app.dock.hide();
   if (process.env.FREEFLOW_NO_SIDECAR) {

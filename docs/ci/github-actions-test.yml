@@ -1,0 +1,18 @@
+# À activer : gh auth refresh -s workflow, puis
+#   mkdir -p .github/workflows && git mv docs/ci/github-actions-test.yml .github/workflows/test.yml
+name: tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # No Electron binary, no speech model: the tests cover the pure logic.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm test

@@ -583,6 +583,11 @@ nav { display: flex; flex-direction: column; gap: 2px; }
 .hero.live .hero-wave span { animation: none; transform: scaleY(var(--lv, 1)); transition: transform 90ms linear; }
 .mic-btn.listening::before { content: ''; position: absolute; inset: -6px; border-radius: 50%; background: radial-gradient(circle, rgba(255, 106, 69, 0.35), transparent 70%); transform: scale(var(--lv, 1)); transition: transform 90ms linear; z-index: -1; }
 
+/* ---------- Microphone test meter */
+.mic-ctl { display: flex; align-items: center; gap: 8px; }
+.meter { position: relative; height: 6px; width: 260px; max-width: 100%; margin-top: 10px; border-radius: 6px; background: var(--surface-3); overflow: hidden; }
+.meter span { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 6px; background: var(--grad); transition: width 60ms linear; }
+
 /* ---------- Local AI formatting */
 .badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--iris-soft); color: var(--iris); font-size: 10.5px; letter-spacing: 0.04em; vertical-align: 1px; }
 .ai-test-row { align-items: flex-end; }

@@ -237,7 +237,7 @@
               <span class="mode-art hold" aria-hidden="true"><i></i></span>
               <span><strong>Maintenir pour parler</strong><small id="ptt-hint">Garde la touche enfoncée ; un appui bref passe en mains libres.</small></span></label>
           </div>
-          <p class="hint">Pendant l’écoute, <kbd>Échap</kbd> annule la dictée.</p>
+          <p class="hint">Pendant l’écoute, <kbd>Échap</kbd> annule la dictée. <kbd id="paste-last-kbd">Ctrl+Alt+Maj+V</kbd> recolle ta dernière dictée là où est ton curseur.</p>
         </div>
       </div>
 
@@ -251,8 +251,9 @@
             </div>
           </div>
           <div class="row-item">
-            <div><div class="row-title">Micro</div><div class="row-sub">Si le micro choisi disparaît, OxoFlow reprend celui par défaut.</div></div>
-            <div class="select"><select id="set-mic"><option value="default">Micro par défaut</option></select></div>
+            <div><div class="row-title">Micro</div><div class="row-sub">Si le micro choisi disparaît, OxoFlow reprend celui par défaut.</div>
+              <div class="meter" id="mic-meter" hidden><span id="mic-meter-fill"></span></div></div>
+            <div class="mic-ctl"><div class="select"><select id="set-mic"><option value="default">Micro par défaut</option></select></div><button class="btn small" type="button" id="mic-test">Tester</button></div>
           </div>
           <label class="row-item toggle-row">
             <div><div class="row-title">Coller automatiquement</div><div class="row-sub" id="autopaste-sub">Sinon le texte est seulement copié : colle-le avec Ctrl + V.</div></div>

@@ -12,6 +12,7 @@
   let previewTimer = null;
   const drawn = {};              // last rendered signature per list, so state pushes (download progress...) do not rebuild them
   const openRaw = new Set();     // history entries showing their raw transcript
+  let micTest = null;            // settings > Micro > Tester (declared early: navigate() stops it)
 
   // ---- navigation
   function navigate(section) {
@@ -20,6 +21,7 @@
     $$('.section').forEach((s) => s.classList.toggle('active', s.id === `section-${section}`));
     $('#content').scrollTop = 0;
     if (section === 'settings') refreshAi();
+    else stopMicTest();
     try { localStorage.setItem('ff.section', section); } catch { /* ignore */ }
   }
   $$('.nav-item').forEach((b) => b.addEventListener('click', () => navigate(b.dataset.section)));
@@ -378,7 +380,39 @@
     btn.title = phase === 'listening' && mine ? 'Arrêter' : 'Dicter dans cette zone';
   }
 
+  // ---- microphone test: live level of the selected device for 10 s
+  async function stopMicTest() {
+    if (!micTest) return;
+    const t = micTest; micTest = null;
+    cancelAnimationFrame(t.raf); clearTimeout(t.timer);
+    t.stream.getTracks().forEach((x) => x.stop());
+    try { await t.ctx.close(); } catch { /* ignore */ }
+    $('#mic-meter').hidden = true; $('#mic-test').textContent = 'Tester';
+  }
+  $('#mic-test').addEventListener('click', async () => {
+    if (micTest) return stopMicTest();
+    const id = $('#set-mic').value;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: id && id !== 'default' ? { deviceId: { exact: id } } : true });
+      const ctx = new AudioContext();
+      const an = ctx.createAnalyser(); an.fftSize = 1024;
+      ctx.createMediaStreamSource(stream).connect(an);
+      const buf = new Float32Array(an.fftSize);
+      micTest = { stream, ctx, raf: 0, timer: setTimeout(stopMicTest, 10000) };
+      $('#mic-meter').hidden = false; $('#mic-test').textContent = 'Arrêter';
+      const tick = () => {
+        an.getFloatTimeDomainData(buf);
+        let sum = 0; for (const v of buf) sum += v * v;
+        $('#mic-meter-fill').style.width = `${Math.min(100, Math.pow(Math.sqrt(sum / buf.length) * 6, 0.7) * 100).toFixed(0)}%`;
+        if (micTest) micTest.raf = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch (e) { toast(e && e.name === 'NotAllowedError' ? 'Accès au micro refusé' : 'Micro indisponible', 'error'); }
+  });
+  $('#set-mic').addEventListener('change', () => { if (micTest) stopMicTest().then(() => $('#mic-test').click()); });
+
   // ---- per-OS wording
+  $('#paste-last-kbd').textContent = MAC ? '⌃⌘V' : 'Ctrl+Alt+Maj+V';
   if (MAC) {
     $('#autopaste-sub').textContent = 'Sinon le texte est seulement copié : colle-le avec ⌘V.';
     $('#login-sub').textContent = 'OxoFlow attend dans la barre des menus.';

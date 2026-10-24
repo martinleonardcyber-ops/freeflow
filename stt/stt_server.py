@@ -501,8 +501,24 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(500, {"error": f"{type(e).__name__}: {e}"})
 
 
+def _exit_with_parent():
+    """The app normally stops us with POST /shutdown; if it is killed instead
+    (force quit, crash, closed terminal), we are re-parented to launchd/init and
+    would keep the model in memory forever: exit then."""
+    parent = os.getppid()
+    while True:
+        time.sleep(2)
+        if os.getppid() != parent:
+            try:                     # stderr's reader died with the parent: writing may raise
+                _log("parent process gone, exiting")
+            except Exception:
+                pass
+            os._exit(0)
+
+
 def main():
     global SERVER
+    threading.Thread(target=_exit_with_parent, daemon=True).start()
     SERVER = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     SERVER.daemon_threads = True
     _log(f"listening on http://127.0.0.1:{PORT}  (HF_HOME={os.environ.get('HF_HOME')})")
