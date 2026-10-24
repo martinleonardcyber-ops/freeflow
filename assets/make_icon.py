@@ -1,4 +1,4 @@
-"""Generate FreeFlow icons: a cream waveform on a dark rounded square.
+"""Generate OxoFlow icons: a cream waveform on a dark rounded square.
 Outputs icon.ico (16..256), icon.png (512), tray.png / tray-rec.png (32 px).
 Run: python assets/make_icon.py
 """

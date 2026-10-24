@@ -1,10 +1,10 @@
 # Composants tiers
 
-Le code de FreeFlow est sous licence MIT (voir `LICENSE`). L'installateur Windows embarque aussi les composants suivants, chacun sous sa propre licence.
+Le code de OxoFlow est sous licence MIT (voir `LICENSE`). L'installateur Windows embarque aussi les composants suivants, chacun sous sa propre licence.
 
 | Composant | Rôle | Licence |
 |---|---|---|
-| [Electron](https://github.com/electron/electron) (Chromium, Node.js) | application de bureau | MIT ; licences de Chromium dans `LICENSES.chromium.html` à côté de `FreeFlow.exe` |
+| [Electron](https://github.com/electron/electron) (Chromium, Node.js) | application de bureau | MIT ; licences de Chromium dans `LICENSES.chromium.html` à côté de `OxoFlow.exe` |
 | [uiohook-napi](https://github.com/SnosMe/uiohook-napi) / [libuiohook](https://github.com/kwhat/libuiohook) | raccourci « maintenir pour parler » | MIT / LGPL-3.0 |
 | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) | transcription | MIT |
 | [CTranslate2](https://github.com/OpenNMT/CTranslate2) | moteur d'inférence | MIT |

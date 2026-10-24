@@ -2,8 +2,8 @@
 // Context-isolated bridge between the renderers (hub / overlay) and main.
 const { contextBridge, ipcRenderer } = require('electron');
 
-const ALLOWED_SEND = new Set(['ff:audio-done', 'ff:audio-error', 'ff:overlay-ready', 'ff:hub-ready']);
-const ALLOWED_ON = new Set(['ff:state', 'ff:dictation', 'ff:insert', 'ff:overlay', 'ff:rec-start', 'ff:rec-stop', 'ff:rec-cancel', 'ff:navigate']);
+const ALLOWED_SEND = new Set(['ff:audio-done', 'ff:audio-error', 'ff:overlay-ready', 'ff:hub-ready', 'ff:level', 'ff:overlay-mouse', 'ff:overlay-click']);
+const ALLOWED_ON = new Set(['ff:state', 'ff:dictation', 'ff:insert', 'ff:overlay', 'ff:rec-start', 'ff:rec-stop', 'ff:rec-cancel', 'ff:navigate', 'ff:level']);
 
 contextBridge.exposeInMainWorld('freeflow', {
   platform: process.platform,   // known before the first state push: the hub lays itself out per OS

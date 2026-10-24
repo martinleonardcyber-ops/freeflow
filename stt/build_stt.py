@@ -1,4 +1,4 @@
-"""Build the FreeFlow STT sidecar with PyInstaller (onedir) and copy the CUDA 12
+"""Build the OxoFlow STT sidecar with PyInstaller (onedir) and copy the CUDA 12
 runtime DLLs (cuBLAS + cuDNN 9 from the nvidia-* pip wheels) next to it, so the
 packaged exe runs on the GPU on a machine without Python or the CUDA toolkit.
 

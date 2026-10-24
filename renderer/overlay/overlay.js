@@ -19,10 +19,31 @@
   const bars = Array.from(barsEl.children);
   const levels = new Array(HALF).fill(0);
   let timerInt = null, startedAt = 0, maxSec = 300;
+  let soundsOn = true, outCtx = null, lastPhase = 'idle';
+
+  // ---- sound cues (synthesised: no audio files to ship)
+  function chime(freqs, { step = 0.075, len = 0.11, gain = 0.05 } = {}) {
+    if (!soundsOn) return;
+    try {
+      outCtx = outCtx || new AudioContext();
+      const t0 = outCtx.currentTime + 0.01;
+      freqs.forEach((f, i) => {
+        const o = outCtx.createOscillator(), g = outCtx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        const t = t0 + i * step;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(gain, t + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+        o.connect(g).connect(outCtx.destination);
+        o.start(t); o.stop(t + len + 0.02);
+      });
+    } catch { /* no audio output: stay silent */ }
+  }
 
   // ---- audio capture state
   let ctx = null, stream = null, source = null, node = null, sink = null;
   let chunks = [], total = 0, recording = false, demoTimer = null, raf = null;
+  let skip = 0;   // samples to drop at the start: the start chime must not be transcribed
   let flushResolve = null;
 
   function setBars() {
@@ -57,7 +78,19 @@
   }
   function stopRender() { if (raf) cancelAnimationFrame(raf); raf = null; }
 
+  // Idle Flow bar: a small capsule that grows on hover; a click starts a hands-free dictation.
+  function showMini(hint) {
+    stopRender(); stopTimer(); stopDemoLevels();
+    pill.dataset.phase = 'idle';
+    pill.classList.add('show', 'mini');
+    if (hint) document.getElementById('hint').textContent = hint;
+  }
+  pill.addEventListener('mouseenter', () => { pill.classList.add('hover'); window.freeflow.send('ff:overlay-mouse', true); });
+  pill.addEventListener('mouseleave', () => { pill.classList.remove('hover'); window.freeflow.send('ff:overlay-mouse', false); });
+  pill.addEventListener('click', () => window.freeflow.send('ff:overlay-click'));
+
   function show(phase, payload = {}) {
+    pill.classList.remove('mini');
     pill.dataset.phase = phase;
     labelEl.textContent = LABELS[phase] || '';
     if (phase === 'done') {
@@ -78,7 +111,7 @@
     if (payload.demo && phase === 'listening') startDemoLevels(); else stopDemoLevels();
   }
   function hide() {
-    pill.classList.remove('show');
+    pill.classList.remove('show', 'mini', 'hover');
     stopRender();
     stopTimer();
     stopDemoLevels();
@@ -127,17 +160,23 @@
       if (e.data && e.data.done) { if (flushResolve) flushResolve(); return; }
       const f32 = e.data;
       if (!(f32 instanceof Float32Array)) return;
-      if (recording) { chunks.push(f32); total += f32.length; }
+      if (recording) {
+        if (skip > 0) skip -= f32.length;
+        else { chunks.push(f32); total += f32.length; }
+      }
       // RMS -> level for the waveform
       let sum = 0;
       for (let i = 0; i < f32.length; i += 4) sum += f32[i] * f32[i];
       const rms = Math.sqrt(sum / (f32.length / 4));
-      pushLevel(Math.min(1, Math.pow(rms * 6, 0.7)));
+      const level = Math.min(1, Math.pow(rms * 6, 0.7));
+      pushLevel(level);
+      window.freeflow.send('ff:level', level);   // mirrored in the hub's waveform
     };
     sink = ctx.createGain();
     sink.gain.value = 0; // worklet needs a path to the destination to keep processing
     source.connect(node).connect(sink).connect(ctx.destination);
     if (ctx.state !== 'running') await ctx.resume();
+    skip = soundsOn ? Math.round(ctx.sampleRate * 0.3) : 0;
   }
 
   async function finishRecording() {
@@ -177,11 +216,19 @@
   // ---- IPC
   window.freeflow.on('ff:overlay', (payload) => {
     if (!payload) return;
-    if (payload.phase === 'idle' || payload.phase === 'hide') hide();
+    if (!payload.demo) {
+      if (payload.phase === 'transcribing' && lastPhase === 'listening') chime([880, 587], { gain: 0.04 });
+      if (payload.phase === 'error' && lastPhase !== 'error') chime([330, 262], { step: 0.09, gain: 0.035 });
+      lastPhase = payload.phase;
+    }
+    if (payload.phase === 'idle' && payload.bar) showMini(payload.hint);
+    else if (payload.phase === 'idle' || payload.phase === 'hide') hide();
     else show(payload.phase, payload);
   });
 
   window.freeflow.on('ff:rec-start', async (opts) => {
+    soundsOn = !opts || opts.sounds !== false;
+    chime([587, 880]);
     try {
       await startRecording(opts || {});
     } catch (e) {

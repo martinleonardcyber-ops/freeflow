@@ -121,6 +121,19 @@ html, body {
 .pill[data-phase="error"] .label { color: #ffd5d6; }
 .pill[data-phase="done"] .label small, .pill[data-phase="error"] .label small { color: var(--muted); font-weight: 600; margin-left: 6px; }
 
+/* ---------- Idle Flow bar */
+.hint { display: none; font-size: 12.5px; font-weight: 650; color: var(--text); white-space: nowrap; }
+.pill.mini {
+  height: 9px; min-width: 0; width: 46px; padding: 0; gap: 0; justify-content: center; cursor: pointer;
+  background: linear-gradient(rgba(18, 17, 24, 0.82), rgba(18, 17, 24, 0.82)) padding-box, linear-gradient(120deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.1)) border-box;
+  box-shadow: 0 4px 14px -4px rgba(0, 0, 0, 0.45);
+  transition: transform 380ms cubic-bezier(0.2, 0.9, 0.2, 1.15), opacity 220ms ease, width 260ms cubic-bezier(0.2, 0.9, 0.2, 1.1), height 220ms ease, padding 220ms ease;
+}
+.pill.mini > :not(.glow) { display: none; }
+.pill.mini.hover { height: 32px; width: auto; padding: 0 14px; background: linear-gradient(var(--ink), var(--ink)) padding-box, linear-gradient(120deg, rgba(139, 108, 255, 0.55), rgba(255, 255, 255, 0.1) 40%, rgba(255, 106, 69, 0.5)) border-box; }
+.pill.mini.hover .hint { display: block; animation: fadein 200ms ease 60ms backwards; }
+@keyframes fadein { from { opacity: 0; } }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; }
 }

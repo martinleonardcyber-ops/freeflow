@@ -19,3 +19,4 @@ native/*.exe
 # macOS build outputs
 stt/.venv/
 native/PasteHelperMac
+native/FnKeyMac

@@ -1,5 +1,5 @@
 'use strict';
-// FreeFlow main process: tray, global shortcut, overlay pill, hub window,
+// OxoFlow main process: tray, global shortcut, overlay pill, hub window,
 // dictation pipeline (overlay mic -> WAV -> local STT sidecar -> formatting ->
 // clipboard + simulated paste -> history).
 const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, clipboard, screen, nativeImage, nativeTheme, shell, session, systemPreferences, ClipboardItem } = require('electron');
@@ -13,29 +13,34 @@ const { pcm16ToWav, wavDurationMs } = require('./lib/wav');
 const { Sidecar } = require('./lib/sidecar');
 const { paste } = require('./lib/paste');
 const { DEFAULT_VOCAB, normalizeVocab, parseSounds } = require('./lib/vocab');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
-app.setName('FreeFlow');
-app.setAppUserModelId('com.alan.freeflow');
+app.setName('OxoFlow');
+// Start/stop sounds are played by the overlay, which never gets a user gesture.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+app.setAppUserModelId('com.oxoria.oxoflow');
 
 const ROOT = __dirname;
 const IS_MAC = process.platform === 'darwin';
 const IS_WIN = process.platform === 'win32';
 const ASSETS = path.join(ROOT, 'assets');
 const DEFAULT_SETTINGS = {
-  shortcut: 'Ctrl+Alt+Space',
-  mode: 'toggle',               // 'toggle' | 'ptt'
+  shortcut: IS_MAC ? 'Fn' : 'Ctrl+Alt+Space',   // macOS: hold fn, like Wispr Flow
+  mode: IS_MAC ? 'ptt' : 'toggle',             // 'toggle' | 'ptt'
   language: 'auto',             // 'auto' | 'fr' | 'en'
   autoPaste: true,
   launchAtLogin: false,
   microphoneId: 'default',
   pasteDelayMs: 60,
   restoreClipboardMs: 400,
-  modelCache: '',               // empty = %LOCALAPPDATA%\FreeFlow\models, or <userData>/models on macOS (filled in at first start)
+  modelCache: '',               // empty = %LOCALAPPDATA%\OxoFlow\models, or <userData>/models on macOS (filled in at first start)
   sidecarPort: 48123,
   maxDictationSec: 300,
   showHubAtStart: true,
   theme: 'system',              // 'system' | 'light' | 'dark'
+  sounds: true,                 // short cues when listening starts / stops
+  flowBar: true,                // small pill always visible at the bottom of the screen
+  fnOffered: false,             // macOS: the old Ctrl+Alt+Space default was switched to fn once
   vocabSeeded: false,           // default vocabulary (n8n, Higgsfield...) added once
 };
 const OVERLAY_W = 460;
@@ -73,15 +78,41 @@ function log(...parts) {
 }
 
 // ---- Stores ----------------------------------------------------------------
+// OxoFlow was FreeFlow: move the old profile (settings, dictionary, history,
+// downloaded model) into the new folder once, so nothing is lost or re-downloaded.
+function migrateFromFreeFlow() {
+  if (argv['user-data-dir']) return;
+  const old = path.join(app.getPath('appData'), 'FreeFlow');
+  const cur = app.getPath('userData');
+  if (old === cur || !fs.existsSync(path.join(old, 'settings.json')) || fs.existsSync(path.join(cur, 'settings.json'))) return;
+  fs.mkdirSync(cur, { recursive: true });
+  for (const name of fs.readdirSync(old)) {
+    const to = path.join(cur, name);
+    if (!fs.existsSync(to)) { try { fs.renameSync(path.join(old, name), to); } catch { /* left in place */ } }
+  }
+  try {   // the model cache path may point inside the old folder
+    const f = path.join(cur, 'settings.json');
+    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+    if (j.modelCache && j.modelCache.startsWith(old)) { j.modelCache = cur + j.modelCache.slice(old.length); fs.writeFileSync(f, JSON.stringify(j, null, 2)); }
+  } catch { /* defaults will apply */ }
+  try { fs.rmdirSync(old); } catch { /* not empty: Chromium leftovers stay */ }
+}
+
 function initStores() {
+  migrateFromFreeFlow();
   userData = app.getPath('userData');
   logDir = path.join(userData, 'logs');
   fs.mkdirSync(logDir, { recursive: true });
-  logFile = path.join(logDir, 'freeflow.log');
+  logFile = path.join(logDir, 'oxoflow.log');
   settings = createStore(path.join(userData, 'settings.json'), DEFAULT_SETTINGS);
   if (!fs.existsSync(settings.path)) settings.set(settings.get()); // write defaults so the file is discoverable
-  // Models (0,5 to 3 GB) go to %LOCALAPPDATA%\FreeFlow\models, never to the roaming profile.
-  if (!settings.get().modelCache) settings.update({ modelCache: path.join(process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'FreeFlow') : userData, 'models') });
+  // Models (0,5 to 3 GB) go to %LOCALAPPDATA%\OxoFlow\models, never to the roaming profile.
+  if (!settings.get().modelCache) settings.update({ modelCache: path.join(process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'OxoFlow') : userData, 'models') });
+  // macOS: profiles created with the old default move to "hold fn" once (Wispr Flow's gesture).
+  if (IS_MAC && !settings.get().fnOffered) {
+    const cur = settings.get();
+    settings.update(cur.shortcut === 'Ctrl+Alt+Space' && cur.mode === 'toggle' ? { shortcut: 'Fn', mode: 'ptt', fnOffered: true } : { fnOffered: true });
+  }
   dictionary = createStore(path.join(userData, 'dictionary.json'), []);
   // Vocabulary entries are { word, sounds[] }; migrate legacy string lists and seed the defaults once.
   let vocab = normalizeVocab(dictionary.get());
@@ -171,6 +202,8 @@ function buildState() {
     platform: process.platform,
     // macOS: posting Cmd+V and the low-level keyboard hook both need the Accessibility permission.
     accessibility: IS_MAC ? systemPreferences.isTrustedAccessibilityClient(false) : true,
+    microphone: IS_MAC ? systemPreferences.getMediaAccessStatus('microphone') : 'granted',
+    fnUsage,
   };
 }
 
@@ -192,7 +225,7 @@ function pasteHelperPath() {
 function createHub() {
   hub = new BrowserWindow({
     width: 1100, height: 720, minWidth: 900, minHeight: 600,
-    title: 'FreeFlow',
+    title: 'OxoFlow',
     backgroundColor: IS_MAC ? '#00000000' : nativeTheme.shouldUseDarkColors ? '#0c0c10' : '#f6f5f2',
     icon: path.join(ASSETS, IS_WIN ? 'icon.ico' : 'icon.png'),
     autoHideMenuBar: true,
@@ -208,7 +241,7 @@ function createHub() {
     if (shortcutSuspended) { shortcutSuspended = false; registerShortcut(); pushState(); }
     if (IS_MAC && app.dock) app.dock.hide();   // menu-bar app: a Dock icon only while the window is open
   });
-  hub.on('focus', pushState);                  // e.g. the Accessibility permission was just granted
+  hub.on('focus', () => { readFnUsage(); pushState(); });   // e.g. a permission or the 🌐 key setting just changed
   hub.webContents.on('did-finish-load', pushState);
   hub.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
 }
@@ -226,7 +259,7 @@ function createOverlay() {
     width: OVERLAY_W, height: OVERLAY_H, show: false,
     frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
     alwaysOnTop: true, skipTaskbar: true, focusable: false, resizable: false, movable: false,
-    ...(IS_MAC ? { type: 'panel' } : {}),   // NSPanel: never activates FreeFlow, so Cmd+V lands in the app the user is in
+    ...(IS_MAC ? { type: 'panel' } : {}),   // NSPanel: never activates OxoFlow, so Cmd+V lands in the app the user is in
     minimizable: false, maximizable: false, fullscreenable: false,
     webPreferences: { preload: path.join(ROOT, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
@@ -234,6 +267,7 @@ function createOverlay() {
   overlay.setIgnoreMouseEvents(true, { forward: true });
   overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlay.loadFile(path.join(ROOT, 'renderer', 'overlay', 'index.html'));
+  overlay.webContents.on('did-finish-load', () => { if (flowBarOn() && dictation.phase === 'idle') { showOverlay(); setPhase('idle'); } });
   positionOverlay();
 }
 
@@ -267,7 +301,7 @@ function trayIcon(name) {
 
 function createTray() {
   tray = new Tray(trayIcon('tray-loading.png'));
-  tray.setToolTip('FreeFlow — Chargement du modèle…');
+  tray.setToolTip('OxoFlow — Chargement du modèle…');
   if (!IS_MAC) {                 // macOS: a click opens the menu, like every menu-bar item
     tray.on('click', showHub);
     tray.on('double-click', showHub);
@@ -276,6 +310,7 @@ function createTray() {
 }
 
 function prettyShortcut(acc) {
+  if (acc === 'Fn') return 'fn';
   if (IS_MAC) {
     const mac = { Ctrl: '⌃', Alt: '⌥', Shift: '⇧', Super: '⌘', Space: 'Espace' };
     return String(acc || '').split('+').map((k) => mac[k] || k).join('');
@@ -295,6 +330,17 @@ function loadingLabel(info, short = false) {
   return short ? `Téléchargement · ${pct} %` : `Téléchargement du modèle · ${pct} % (${go(d.done || 0)} / ${go(d.total)} Go)`;
 }
 
+// "Copier la dernière dictée" + the last three, as Wispr's "paste last transcript".
+function recentMenu() {
+  const recent = history ? history.get().slice(0, 3) : [];
+  const short = (t) => (t.length > 48 ? t.slice(0, 47).trimEnd() + '…' : t);
+  const copy = async (t) => { await clipboard.writeText(t); log('tray: copied a past dictation'); };
+  return [
+    { label: 'Copier la dernière dictée', enabled: !!recent.length, click: () => recent[0] && copy(recent[0].text) },
+    { label: 'Dictées récentes', enabled: recent.length > 1, submenu: recent.map((h) => ({ label: short(h.text), click: () => copy(h.text) })) },
+  ];
+}
+
 function updateTray() {
   if (!tray) return;
   const s = settings.get();
@@ -303,11 +349,13 @@ function updateTray() {
   const info = sidecar ? sidecar.info : {};
   tray.setImage(trayIcon(listening ? 'tray-rec.png' : info.ready ? 'tray.png' : 'tray-loading.png'));
   const engine = info.ready ? `${info.device === 'cuda' ? 'GPU' : info.device === 'mlx' ? 'GPU Metal' : 'CPU'} · ${info.model}` : info.loading ? loadingLabel(info) : (info.error ? 'Moteur indisponible' : '…');
-  tray.setToolTip(`FreeFlow — ${listening ? 'Écoute…' : busy ? 'Transcription…' : engine}\nRaccourci : ${prettyShortcut(s.shortcut)}`);
+  tray.setToolTip(`OxoFlow — ${listening ? 'Écoute…' : busy ? 'Transcription…' : engine}\nRaccourci : ${prettyShortcut(s.shortcut)}`);
   if (IS_MAC) tray.setTitle(listening ? ' Écoute' : '');
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Ouvrir FreeFlow', click: showHub },
+    { label: 'Ouvrir OxoFlow', click: showHub },
     { label: listening ? 'Arrêter la dictée (mains libres)' : 'Démarrer la dictée (mains libres)', enabled: !!info.ready && !busy, click: () => toggleDictation() },
+    { type: 'separator' },
+    ...recentMenu(),
     { type: 'separator' },
     { label: `Raccourci : ${prettyShortcut(s.shortcut)}${shortcutOk ? '' : ' (indisponible)'}`, enabled: false },
     { label: info.ready ? `Moteur : ${engine} (${info.compute_type})` : `Moteur : ${engine}`, enabled: false },
@@ -317,9 +365,17 @@ function updateTray() {
 }
 
 // ---- Dictation state machine ----------------------------------------------
+// What the idle Flow bar says on hover.
+function barHint() {
+  const s = settings.get();
+  if (s.shortcut === 'Fn') return s.mode === 'ptt' ? 'Maintiens fn pour dicter' : 'Appuie sur fn pour dicter';
+  return `${s.mode === 'ptt' ? 'Maintiens' : 'Appuie sur'} ${prettyShortcut(s.shortcut)} pour dicter`;
+}
+const flowBarOn = () => settings.get().flowBar !== false;
+
 function setPhase(phase, payload = {}) {
   dictation.phase = phase;
-  overlaySend('ff:overlay', { phase, ...payload });
+  overlaySend('ff:overlay', { phase, ...payload, ...(phase === 'idle' ? { bar: flowBarOn(), hint: barHint() } : {}) });
   if (hub && !hub.isDestroyed()) hub.webContents.send('ff:dictation', { phase, ...payload });
   updateTray();
 }
@@ -328,7 +384,8 @@ function scheduleIdle(ms) {
   clearTimeout(dictation.idleTimer);
   dictation.idleTimer = setTimeout(() => {
     setPhase('idle');
-    setTimeout(() => { if (dictation.phase === 'idle' && overlay && overlay.isVisible()) overlay.hide(); }, 420);
+    // The Flow bar stays on screen between dictations; without it the pill leaves.
+    setTimeout(() => { if (dictation.phase === 'idle' && overlay && overlay.isVisible() && !flowBarOn()) overlay.hide(); }, 420);
     pushState();
   }, ms);
 }
@@ -362,7 +419,7 @@ function startDictation(opts = {}) {
   showOverlay();
   setPhase('listening', { startedAt: dictation.startedAt, maxSec: settings.get().maxDictationSec });
   const s = settings.get();
-  overlaySend('ff:rec-start', { deviceId: s.microphoneId, maxSec: s.maxDictationSec });
+  overlaySend('ff:rec-start', { deviceId: s.microphoneId, maxSec: s.maxDictationSec, sounds: s.sounds !== false });
   armEscape(true);
   clearTimeout(dictation.timer);
   dictation.timer = setTimeout(() => stopDictation(), (s.maxDictationSec || 300) * 1000);
@@ -404,6 +461,19 @@ ipcMain.on('ff:audio-done', (_e, payload) => {
     return;
   }
   runPipeline(wav, { toHub: dictation.toHub, noPaste: dictation.noPaste }).catch(() => {});
+});
+
+// Live microphone level (0..1, ~10/s) from the overlay, mirrored in the hub's waveform.
+ipcMain.on('ff:level', (_e, v) => {
+  if (hub && !hub.isDestroyed() && hub.isVisible()) hub.webContents.send('ff:level', Number(v) || 0);
+});
+
+// Flow bar: the overlay window lets clicks through except over the pill.
+ipcMain.on('ff:overlay-mouse', (_e, inside) => {
+  if (overlay && !overlay.isDestroyed()) overlay.setIgnoreMouseEvents(!inside, { forward: true });
+});
+ipcMain.on('ff:overlay-click', () => {
+  if (dictation.phase === 'idle' || dictation.phase === 'listening') toggleDictation();
 });
 
 ipcMain.on('ff:audio-error', (_e, message) => {
@@ -484,15 +554,16 @@ async function runPipeline(wav, opts = {}) {
       sttMs: res.duration_ms,
       latencyMs,
       language: res.language,
-      app: pasteOutcome ? pasteOutcome.process : (opts.toHub ? 'FreeFlow' : null),
+      app: pasteOutcome ? pasteOutcome.process : (opts.toHub ? 'OxoFlow' : null),
       pasted: pasteOutcome ? pasteOutcome.outcome : (opts.toHub ? 'hub' : 'clipboard'),
     };
     history.set([entry, ...history.get()].slice(0, 2000));
+    updateTray();
     log(`dictation: ${entry.words} words, stt ${entry.sttMs} ms, latency ${latencyMs} ms, paste=${entry.pasted}`);
     setPhase('done', { text, latencyMs, pasted: entry.pasted });
     scheduleIdle(pasteOutcome && pasteOutcome.outcome === 'blocked' ? 2200 : 900);
     if (pasteOutcome && pasteOutcome.outcome === 'blocked') {
-      setPhase('error', { message: pasteOutcome.reason === 'accessibility' ? 'Autorise FreeFlow dans Accessibilité · texte copié' : 'Collage bloqué — texte copié dans le presse-papiers' });
+      setPhase('error', { message: pasteOutcome.reason === 'accessibility' ? 'Autorise OxoFlow dans Accessibilité · texte copié' : 'Collage bloqué — texte copié dans le presse-papiers' });
       if (pasteOutcome.reason === 'accessibility') pushState();
     }
     pushState();
@@ -625,12 +696,63 @@ function startHook(acc, mode) {
   try { uIOhook.start(); hook.active = true; log(`hook: started for ${acc} (${mode}${combo.key ? '' : ', modifier-only'})`); return true; } catch (e) { log('uiohook start failed:', e.message); return false; }
 }
 
+// macOS "Press 🌐 key to": 0 = do nothing; anything else (emoji, input source,
+// Apple dictation; missing = system default) fights with "hold fn".
+let fnUsage = null;
+function readFnUsage() {
+  if (!IS_MAC) return;
+  execFile('defaults', ['read', 'com.apple.HIToolbox', 'AppleFnUsageType'], (err, out) => {
+    const v = err ? -1 : Number(String(out).trim());
+    if (v !== fnUsage) { fnUsage = v; pushState(); }
+  });
+}
+
+// macOS fn key: native/FnKeyMac prints down / up / spoil; the same push-to-talk
+// logic as the uiohook path drives the dictation.
+let fnProc = null;
+function fnHelperPath() {
+  return [path.join(process.resourcesPath || '', 'FnKeyMac'), path.join(ROOT, 'native', 'FnKeyMac')].find((p) => fs.existsSync(p)) || null;
+}
+function stopFnHook() {
+  if (fnProc) { const p = fnProc; fnProc = null; try { p.kill(); } catch { /* ignore */ } }
+}
+function startFnHook(mode) {
+  const exe = fnHelperPath();
+  if (!exe) { log('fn: native/FnKeyMac missing (npm run build:native:mac)'); return false; }
+  hook.mode = mode; hook.combo = { ctrl: false, alt: false, shift: false, meta: false, keycode: null };
+  hook.comboDown = false; hook.handsFree = false; hook.spoiled = false;
+  const proc = spawn(exe, [], { stdio: ['pipe', 'pipe', 'ignore'] });
+  fnProc = proc;
+  let buf = '';
+  proc.stdout.setEncoding('utf8');
+  proc.stdout.on('data', (d) => {
+    buf += d;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const ev = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      if (ev === 'down') { hook.comboDown = true; hook.spoiled = false; hook.pressedAt = Date.now(); onComboDown(); }
+      else if (ev === 'spoil') hook.spoiled = true;
+      else if (ev === 'up' && hook.comboDown) { hook.comboDown = false; onComboUp(); }
+      else if (ev === 'ready') log(`fn: listening (${mode})`);
+      else if (ev === 'denied') { log('fn: keyboard access denied (Accessibility)'); shortcutOk = false; updateTray(); pushState(); }
+    }
+  });
+  proc.on('exit', (code) => { if (fnProc === proc) { fnProc = null; log(`fn: helper exited (${code})`); if (code) { shortcutOk = false; updateTray(); pushState(); } } });
+  return true;
+}
+
 function registerShortcut() {
   globalShortcut.unregisterAll();
   stopHook();
+  stopFnHook();
   shortcutOk = false;
   if (shortcutSuspended) { log('shortcut: suspended while recording'); updateTray(); return; }
   const s = settings.get();
+  if (s.shortcut === 'Fn') {
+    if (IS_MAC) { shortcutOk = startFnHook(s.mode); updateTray(); return; }
+    settings.update({ shortcut: DEFAULT_SETTINGS.shortcut === 'Fn' ? 'Ctrl+Alt+Space' : DEFAULT_SETTINGS.shortcut });
+    return registerShortcut();
+  }
   const combo = parseAccelerator(s.shortcut);
   const modifierOnly = !combo.key;
   if ((s.mode === 'ptt' || modifierOnly) && pttAvailable) {
@@ -643,6 +765,40 @@ function registerShortcut() {
     log(`shortcut ${s.shortcut}: ${shortcutOk ? 'registered' : 'FAILED'}`);
   }
   updateTray();
+}
+
+// macOS app menu, in French. ⌘, opens the settings; the Edit menu keeps ⌘C / ⌘V / ⌘A working in the hub.
+function buildAppMenu() {
+  if (!IS_MAC) return;
+  const go = (section) => () => { showHub(); hub.webContents.send('ff:navigate', section); };
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: 'OxoFlow', submenu: [
+      { label: 'À propos de OxoFlow', role: 'about' },
+      { type: 'separator' },
+      { label: 'Réglages…', accelerator: 'Command+,', click: go('settings') },
+      { type: 'separator' },
+      { label: 'Masquer OxoFlow', role: 'hide' },
+      { label: 'Masquer les autres', role: 'hideOthers' },
+      { type: 'separator' },
+      { label: 'Quitter OxoFlow', accelerator: 'Command+Q', click: quitApp },
+    ] },
+    { label: 'Édition', submenu: [
+      { label: 'Annuler', role: 'undo' }, { label: 'Rétablir', role: 'redo' }, { type: 'separator' },
+      { label: 'Couper', role: 'cut' }, { label: 'Copier', role: 'copy' }, { label: 'Coller', role: 'paste' }, { label: 'Tout sélectionner', role: 'selectAll' },
+    ] },
+    { label: 'Aller', submenu: [
+      { label: 'Accueil', accelerator: 'Command+1', click: go('home') },
+      { label: 'Historique', accelerator: 'Command+2', click: go('history') },
+      { label: 'Dictionnaire', accelerator: 'Command+3', click: go('dictionary') },
+      { label: 'Snippets', accelerator: 'Command+4', click: go('snippets') },
+      { label: 'Réglages', accelerator: 'Command+5', click: go('settings') },
+    ] },
+    { label: 'Fenêtre', role: 'windowMenu', submenu: [
+      { label: 'Fermer', accelerator: 'Command+W', role: 'close' }, { label: 'Placer dans le Dock', role: 'minimize' },
+      ...(app.isPackaged ? [] : [{ type: 'separator' }, { label: 'Recharger', role: 'reload' }, { label: 'Outils de développement', role: 'toggleDevTools' }]),
+    ] },
+  ]));
+  app.setAboutPanelOptions({ applicationName: 'OxoFlow', applicationVersion: app.getVersion(), credits: 'Dictée vocale 100 % locale · MIT' });
 }
 
 function applyTheme(theme) {
@@ -658,6 +814,10 @@ ipcMain.handle('ff:set-settings', (_e, patch) => {
   const next = settings.update(patch || {});
   if (next.shortcut !== before.shortcut || next.mode !== before.mode) registerShortcut();
   if (next.theme !== before.theme) applyTheme(next.theme);
+  if (next.flowBar !== before.flowBar || next.shortcut !== before.shortcut || next.mode !== before.mode) {
+    if (next.flowBar !== false && dictation.phase === 'idle') { showOverlay(); setPhase('idle'); }
+    else if (next.flowBar === false && dictation.phase === 'idle' && overlay) overlay.hide();
+  }
   if (next.launchAtLogin !== before.launchAtLogin) {
     try { app.setLoginItemSettings({ openAtLogin: !!next.launchAtLogin, path: process.execPath, args: app.isPackaged ? [] : [ROOT] }); } catch (e) { log('login item:', e.message); }
   }
@@ -668,6 +828,7 @@ ipcMain.handle('ff:set-settings', (_e, patch) => {
 });
 
 ipcMain.handle('ff:shortcut-test', (_e, acc) => {
+  if (acc === 'Fn') return IS_MAC ? { ok: true } : { ok: false, error: 'La touche fn seule n’est disponible que sur Mac.' };
   const c = parseAccelerator(acc);
   const nMods = [c.ctrl, c.alt, c.shift, c.meta].filter(Boolean).length;
   if (!c.key) {
@@ -739,6 +900,7 @@ ipcMain.handle('ff:history', (_e, { action, id }) => {
   if (action === 'delete') list = list.filter((x) => x.id !== id);
   if (action === 'clear') list = [];
   history.set(list);
+  updateTray();
   pushState();
   return list;
 });
@@ -747,6 +909,16 @@ ipcMain.handle('ff:dictation-toggle', (_e, opts) => { toggleDictation(opts || {}
 ipcMain.handle('ff:dictation-cancel', () => { cancelDictation(); return dictation.phase; });
 ipcMain.handle('ff:copy', async (_e, text) => { await clipboard.writeText(String(text || '')); return true; });
 ipcMain.handle('ff:open-logs', () => shell.openPath(logDir));
+// macOS: ask for the microphone (system dialog the first time, the settings pane once refused).
+ipcMain.handle('ff:open-keyboard-settings', () => shell.openExternal('x-apple.systempreferences:com.apple.Keyboard-Settings.extension'));
+ipcMain.handle('ff:mic-prompt', async () => {
+  if (!IS_MAC) return true;
+  let ok = false;
+  try { ok = systemPreferences.getMediaAccessStatus('microphone') === 'granted' || await systemPreferences.askForMediaAccess('microphone'); } catch (e) { log('microphone prompt:', e.message); }
+  if (!ok) await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+  pushState();
+  return ok;
+});
 // macOS: ask for the Accessibility permission (system dialog) and open the right settings pane.
 ipcMain.handle('ff:accessibility-prompt', async () => {
   if (!IS_MAC) return true;
@@ -832,7 +1004,13 @@ async function uiTest(dir) {
 
 async function takeScreenshot(which, out) {
   let win = which.startsWith('overlay') ? overlay : hub;
-  if (win === hub) { showHub(); const section = which.split(':')[1]; if (section) hub.webContents.send('ff:navigate', section); }
+  if (win === hub) {
+    // "hub:home@560" = the home section scrolled down by 560 px
+    showHub();
+    const [section, scroll] = (which.split(':')[1] || '').split('@');
+    if (section) hub.webContents.send('ff:navigate', section);
+    if (scroll) setTimeout(() => hub.webContents.executeJavaScript(`document.querySelector('#content').scrollTop = ${Number(scroll) || 0}`), 400);
+  }
   else {
     showOverlay();
     const phase = which.split(':')[1] || 'listening';
@@ -868,8 +1046,8 @@ async function runDevCommands() {
       const dir = typeof argv.screenshots === 'string' ? argv.screenshots : path.join(ROOT, 'screenshots');
       if (argv['wait-ready']) await waitReady(240000);
       await new Promise((r) => setTimeout(r, 1200));
-      for (const which of ['hub:home', 'hub:history', 'hub:dictionary', 'hub:snippets', 'hub:settings', 'overlay:listening', 'overlay:transcribing', 'overlay:done', 'overlay:error']) {
-        const out = path.join(dir, which.replace(':', '-') + '.png');
+      for (const which of ['hub:home', 'hub:home@560', 'hub:history', 'hub:dictionary', 'hub:snippets', 'hub:settings', 'overlay:listening', 'overlay:transcribing', 'overlay:done', 'overlay:error']) {
+        const out = path.join(dir, which.replace(':', '-').replace('@', '-') + '.png');
         await takeScreenshot(which, out);
         console.log('SCREENSHOT ' + out);
       }
@@ -894,6 +1072,7 @@ async function quitApp() {
   log('quitting');
   try { globalShortcut.unregisterAll(); } catch { /* ignore */ }
   stopHook();
+  stopFnHook();
   if (sidecar) await sidecar.stop();
   if (tray) tray.destroy();
   app.exit(0);
@@ -906,7 +1085,7 @@ app.on('before-quit', (e) => { if (!quitting) { e.preventDefault(); quitApp(); }
 app.whenReady().then(async () => {
   initStores();
   applyTheme(settings.get().theme);
-  log(`FreeFlow ${app.getVersion()} starting (packaged=${app.isPackaged}, electron=${process.versions.electron})`);
+  log(`OxoFlow ${app.getVersion()} starting (packaged=${app.isPackaged}, electron=${process.versions.electron})`);
 
   // Microphone permission for our own renderers.
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === 'media' || permission === 'audioCapture'));
@@ -927,6 +1106,8 @@ app.whenReady().then(async () => {
   sidecar.on('exit', () => { updateTray(); pushState(); });
   sidecar.on('progress', () => { updateTray(); pushState(); });
 
+  buildAppMenu();
+  readFnUsage();
   createTray();
   createOverlay();
   createHub();

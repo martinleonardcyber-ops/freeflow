@@ -1,4 +1,4 @@
-// FreeFlow PasteHelper for macOS - same contract as PasteHelper.cs (Windows):
+// OxoFlow PasteHelper for macOS - same contract as PasteHelper.cs (Windows):
 // simulates the paste shortcut (Cmd+V) with CGEvent and prints one JSON line.
 //
 //   PasteHelperMac [--dry-run] [--delay <ms>] [--info] [--trusted [--prompt]]

@@ -116,8 +116,8 @@
     $('#nav-snip-count').textContent = state.snippets.length || '';
 
     const needAx = MAC && state.accessibility === false;
-    $('#ax-banner-home').hidden = !needAx;
     $('#ax-banner-settings').hidden = !needAx;
+    renderSetup(eng);
 
     renderHome(s, st, eng);
     renderHistory();
@@ -125,6 +125,38 @@
     renderSnippets();
     renderSettings(s, st, eng);
     renderTry();
+  }
+
+  // First-run checklist: only what is really missing, read from the system each time.
+  function renderSetup(eng) {
+    const steps = [];
+    const model = $('#step-model');
+    const dl = eng.phase === 'downloading' && eng.download ? eng.download : null;
+    model.className = 'step ' + (eng.ready ? 'done' : eng.loading ? 'busy' : 'bad');
+    $('#step-model-sub').textContent = eng.ready ? `Whisper ${eng.model} · ${gpuName(eng)}` : dl ? (state.loadingLabel || 'Téléchargement…').replace(/^Téléchargement du modèle · /, 'Téléchargement · ') : eng.loading ? 'Chargement en mémoire…' : (eng.error || 'Moteur indisponible');
+    $('#step-model-bar').hidden = !(dl && dl.total);
+    if (dl && dl.total) $('#step-model-fill').style.width = `${Math.min(100, (100 * (dl.done || 0)) / dl.total).toFixed(1)}%`;
+    steps.push(!!eng.ready);
+    const mic = state.microphone || 'granted';
+    $('#step-mic').hidden = !MAC;
+    $('#step-ax').hidden = !MAC;
+    if (!MAC) $('#step-fn').hidden = true;
+    if (MAC) {
+      $('#step-mic').className = 'step ' + (mic === 'granted' ? 'done' : mic === 'denied' || mic === 'restricted' ? 'bad' : '');
+      $('#step-mic-sub').textContent = mic === 'granted' ? 'Autorisé.' : mic === 'denied' ? 'Refusé : réactive-le dans Réglages Système.' : 'Pour t’entendre.';
+      $('#step-mic-btn').textContent = mic === 'denied' ? 'Ouvrir les réglages' : 'Autoriser';
+      steps.push(mic === 'granted');
+      $('#step-ax').className = 'step ' + (state.accessibility ? 'done' : '');
+      steps.push(!!state.accessibility);
+      const fn = state.settings.shortcut === 'Fn';
+      $('#step-fn').hidden = !fn;
+      if (fn) { $('#step-fn').className = 'step ' + (state.fnUsage === 0 ? 'done' : ''); steps.push(state.fnUsage === 0); }
+    }
+    const done = steps.filter(Boolean).length;
+    $('#setup').hidden = done === steps.length;
+    $('#setup-count').textContent = `${done}/${steps.length}`;
+    $('#setup-ring .arc').style.strokeDasharray = `${(100 * done) / steps.length} 100`;
+    $('#setup-sub').textContent = done === steps.length - 1 ? `Plus qu’une étape : ${done} sur ${steps.length} déjà prêtes.` : `Encore ${steps.length - done} étapes, une seule fois.`;
   }
 
   function renderHome(s, st, eng) {
@@ -141,19 +173,22 @@
     renderKeysInto($('#howto-shortcut'), s.shortcut);
     const ptt = s.mode === 'ptt';
     $('#howto-mode').textContent = ptt ? 'maintiens et parle, relâche pour coller' : 'pour démarrer, puis à nouveau pour coller';
+    const gesture = s.shortcut === 'Fn' ? (ptt ? 'Maintiens fn et parle' : 'Appuie sur fn et parle') : (ptt ? 'Maintiens ton raccourci et parle' : 'Appuie sur ton raccourci et parle');
     $('#howto-line').textContent = s.autoPaste
-      ? 'Place ton curseur n’importe où, appuie sur ton raccourci et parle. Le texte s’écrit tout seul.'
-      : `Appuie sur ton raccourci et parle : le texte est copié, colle-le avec ${MAC ? '⌘V' : 'Ctrl + V'}.`;
+      ? `${gesture}, dans un mail, Slack, Notion ou ton code. Le texte s’écrit là où est ton curseur.`
+      : `${gesture} : le texte est copié, colle-le avec ${MAC ? '⌘V' : 'Ctrl + V'}.`;
 
     $('#stat-today').textContent = fmtNum(st.wordsToday);
-    $('#stat-total-foot').textContent = `${fmtNum(st.totalWords)} au total`;
+    $('#stat-total-foot').textContent = `${fmtNum(st.totalWords)} mots au total`;
     $('#stat-wpm').textContent = fmtNum(st.avgWpm);
-    $('#stat-wpm-foot').textContent = st.minutesSpoken ? `${fmtMinutes(st.minutesSpoken)} de voix au total` : 'à l’oral';
     $('#stat-saved').textContent = fmtMinutes(st.minutesSaved || 0);
-    $('#stat-saved-foot').textContent = `estimé vs frappe à ${st.typingWpm || 40} mots/min`;
+    $('#chip-saved').title = `Estimation : temps de frappe à ${st.typingWpm || 40} mots/min moins le temps passé à parler`;
     $('#stat-streak').textContent = fmtNum(st.streak || 0);
     $('#stat-streak-unit').textContent = (st.streak || 0) > 1 ? 'jours' : 'jour';
     $('#stat-count-foot').textContent = plural(st.dictations, 'dictée', 'dictées');
+    $('#home-sub').textContent = st.wordsToday
+      ? `${plural(st.wordsToday, 'mot dicté', 'mots dictés')} aujourd’hui. Rien ne quitte ta machine.`
+      : 'Ta voix, écrite partout. Rien ne quitte ta machine.';
 
     // Activity: real words per day from the history.
     const daily = st.daily || [];
@@ -176,54 +211,42 @@
       if (!total) chart.appendChild(el('<div class="chart-empty">Tes mots dictés apparaîtront ici, jour après jour.</div>'));
     }
 
-    // Recent
-    const recent = state.history.slice(0, 4);
-    const rsig = JSON.stringify(recent.map((h) => h.id)) + (recent[0] ? relShort(recent[0].ts) : '');
+    // Feed: the latest dictations, Wispr-style (one card per day, time on the left).
+    const recent = state.history.slice(0, 12);
+    const rsig = JSON.stringify([recent.map((h) => h.id), [...openRaw], dayKey(new Date())]);
     if (drawn.recent !== rsig) {
       drawn.recent = rsig;
-      const list = $('#recent-list'); list.innerHTML = '';
-      if (!recent.length) list.appendChild(el(`<div class="empty compact"><strong>Aucune dictée pour l’instant</strong><span>Essaie le micro juste au-dessus, ou ton raccourci n’importe où.</span></div>`));
-      for (const h of recent) {
-        list.appendChild(el(`<div class="recent"><span class="when">${esc(relShort(h.ts))}</span><span class="text" title="${esc(h.text)}">${esc(h.text)}</span><span class="w">${plural(h.words, 'mot', 'mots')}</span></div>`));
-      }
+      const list = $('#recent-list');
+      if (!recent.length) {
+        list.innerHTML = '';
+        list.appendChild(el(`<div class="empty"><div class="empty-art">${icon('i-mic')}</div><strong>Aucune dictée pour l’instant</strong><span>Utilise ton raccourci dans n’importe quelle app, ou le micro « Essayer ici ».</span></div>`));
+      } else buildFeed(list, recent, '', () => { drawn.recent = null; renderHome(state.settings, state.stats, state.sidecar || {}); });
     }
   }
 
-  function renderHistory() {
-    const q = $('#history-search').value.trim();
-    const items = q ? state.history.filter((h) => fold(h.text).includes(fold(q)) || fold(h.raw).includes(fold(q))) : state.history;
-    const sig = JSON.stringify([q, items.map((h) => h.id), [...openRaw], dayKey(new Date())]);
-    $('#history-sub').textContent = state.history.length
-      ? (q ? `${plural(items.length, 'résultat', 'résultats')} sur ${plural(state.history.length, 'dictée', 'dictées')}` : `${plural(state.stats.dictations, 'dictée', 'dictées')}, les plus récentes en premier.`)
-      : 'Tes dictées, les plus récentes en premier.';
-    $('#history-clear').disabled = !state.history.length;
-    if (drawn.history === sig) return;
-    drawn.history = sig;
-    const list = $('#history-list'); list.innerHTML = '';
-    if (!items.length) {
-      list.appendChild(el(q
-        ? `<div class="empty"><div class="empty-art">${icon('i-search')}</div><strong>Rien trouvé</strong><span>Aucune dictée ne contient « ${esc(q)} ».</span></div>`
-        : `<div class="empty"><div class="empty-art">${icon('i-mic')}</div><strong>Aucune dictée pour le moment</strong><span>Appuie sur ton raccourci, parle : tout ce que tu dictes arrive ici.</span></div>`));
-      return;
-    }
+  // One card per day; each row: time | text + meta | actions (on hover).
+  function buildFeed(list, items, q, rerender) {
+    list.innerHTML = '';
     let group = null, groupKey = null, n = 0;
     for (const h of items) {
       const k = dayKey(h.ts);
       if (k !== groupKey) {
         groupKey = k;
-        group = el(`<div class="day-group"><div class="day-title">${esc(dayTitle(h.ts))}</div></div>`);
+        const dayWords = items.filter((x) => dayKey(x.ts) === k).reduce((a, x) => a + (x.words || 0), 0);
+        group = el(`<div class="day-group"><div class="day-title">${esc(dayTitle(h.ts))}<span>${plural(dayWords, 'mot', 'mots')}</span></div><div class="day-card"></div></div>`);
         list.appendChild(group);
+        group = group.querySelector('.day-card');
       }
       const rawDiffers = h.raw && h.raw.trim() !== h.text.trim();
       const pasted = h.pasted === 'blocked' ? '<span class="pill warn">collage bloqué</span>' : h.pasted === 'clipboard' ? '<span class="pill">copié</span>' : '';
       const node = el(`<div class="entry" style="animation-delay:${Math.min(n++, 12) * 18}ms">
-        <div>
+        <div class="time">${esc(timeOf(h.ts))}</div>
+        <div class="body">
           <div class="text">${highlight(h.text, q)}</div>
           <div class="meta">
-            <span class="pill">${esc(timeOf(h.ts))}</span>
+            ${h.app ? `<span class="pill app">${esc(appName(h.app))}</span>` : ''}
             <span class="pill">${plural(h.words, 'mot', 'mots')}</span>
             ${h.latencyMs ? `<span class="pill">${(h.latencyMs / 1000).toFixed(1).replace('.', ',')} s</span>` : ''}
-            ${h.app ? `<span class="pill app">${esc(appName(h.app))}</span>` : ''}
             ${h.language ? `<span class="pill">${esc(String(h.language).toUpperCase())}</span>` : ''}
             ${pasted}
             ${rawDiffers ? `<button class="raw-toggle" type="button">${openRaw.has(h.id) ? 'Masquer le brut' : 'Voir le brut'}</button>` : ''}
@@ -237,9 +260,30 @@
       node.querySelector('[data-act=copy]').addEventListener('click', async () => { await ff.invoke('ff:copy', h.text); toast('Copié dans le presse-papiers'); });
       node.querySelector('[data-act=del]').addEventListener('click', () => ff.invoke('ff:history', { action: 'delete', id: h.id }));
       const rt = node.querySelector('.raw-toggle');
-      if (rt) rt.addEventListener('click', () => { openRaw.has(h.id) ? openRaw.delete(h.id) : openRaw.add(h.id); renderHistory(); });
+      if (rt) rt.addEventListener('click', () => { openRaw.has(h.id) ? openRaw.delete(h.id) : openRaw.add(h.id); rerender(); });
       group.appendChild(node);
     }
+  }
+
+  function renderHistory() {
+    const q = $('#history-search').value.trim();
+    const items = q ? state.history.filter((h) => fold(h.text).includes(fold(q)) || fold(h.raw).includes(fold(q))) : state.history;
+    const sig = JSON.stringify([q, items.map((h) => h.id), [...openRaw], dayKey(new Date())]);
+    $('#history-sub').textContent = state.history.length
+      ? (q ? `${plural(items.length, 'résultat', 'résultats')} sur ${plural(state.history.length, 'dictée', 'dictées')}` : `${plural(state.stats.dictations, 'dictée', 'dictées')}, les plus récentes en premier.`)
+      : 'Tes dictées, les plus récentes en premier.';
+    $('#history-clear').disabled = !state.history.length;
+    if (drawn.history === sig) return;
+    drawn.history = sig;
+    const list = $('#history-list');
+    if (!items.length) {
+      list.innerHTML = '';
+      list.appendChild(el(q
+        ? `<div class="empty"><div class="empty-art">${icon('i-search')}</div><strong>Rien trouvé</strong><span>Aucune dictée ne contient « ${esc(q)} ».</span></div>`
+        : `<div class="empty"><div class="empty-art">${icon('i-mic')}</div><strong>Aucune dictée pour le moment</strong><span>Appuie sur ton raccourci, parle : tout ce que tu dictes arrive ici.</span></div>`));
+      return;
+    }
+    buildFeed(list, items, q, () => { drawn.history = null; renderHistory(); });
   }
 
   function renderDictionary() {
@@ -275,7 +319,7 @@
     if (drawn.snip === sig) return;
     drawn.snip = sig;
     const list = $('#snippet-list'); list.innerHTML = '';
-    if (!state.snippets.length) list.appendChild(el(`<div class="empty"><div class="empty-art">${icon('i-bolt')}</div><strong>Aucun snippet</strong><span>Exemple : dis « ma signature », FreeFlow écrit « Bonne journée et à très vite ! ».</span></div>`));
+    if (!state.snippets.length) list.appendChild(el(`<div class="empty"><div class="empty-art">${icon('i-bolt')}</div><strong>Aucun snippet</strong><span>Exemple : dis « ma signature », OxoFlow écrit « Bonne journée et à très vite ! ».</span></div>`));
     state.snippets.forEach((sn, i) => {
       const node = el(`<div class="snippet" style="animation-delay:${Math.min(i, 12) * 18}ms"><span class="trigger">${esc(sn.trigger)}</span><span class="to">${icon('i-arrow')}</span><span class="text">${esc(sn.expansion)}</span>
         <div class="actions"><button class="icon-btn" data-act="edit" title="Modifier">${icon('i-edit')}</button><button class="icon-btn danger" data-act="del" title="Supprimer">${icon('i-trash')}</button></div></div>`);
@@ -289,16 +333,20 @@
     updateShortcutUi();
     $$('input[name=mode]').forEach((r) => { r.checked = r.value === s.mode; });
     const pttInput = document.querySelector('input[name=mode][value=ptt]');
-    pttInput.disabled = !state.pttAvailable;
-    $('#mode-ptt-label').classList.toggle('disabled', !state.pttAvailable);
-    $('#ptt-hint').textContent = state.pttAvailable ? 'Garde la touche enfoncée ; un appui bref passe en mains libres.'
-      : MAC && state.accessibility === false ? 'Autorise FreeFlow dans Accessibilité, puis relance-le, pour l’activer.' : 'Indisponible : le module uiohook-napi n’a pas pu être chargé.';
+    const pttOk = state.pttAvailable || s.shortcut === 'Fn';   // fn has its own listener
+    pttInput.disabled = !pttOk;
+    $('#mode-ptt-label').classList.toggle('disabled', !pttOk);
+    $('#shortcut-fn').hidden = !MAC || s.shortcut === 'Fn' || sc.recording;
+    $('#ptt-hint').textContent = pttOk ? 'Garde la touche enfoncée ; un appui bref passe en mains libres.'
+      : MAC && state.accessibility === false ? 'Autorise OxoFlow dans Accessibilité, puis relance-le, pour l’activer.' : 'Indisponible : le module uiohook-napi n’a pas pu être chargé.';
     for (const seg of $$('.segmented')) {
       const v = s[seg.dataset.setting] || (seg.dataset.setting === 'theme' ? 'system' : 'auto');
       seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.value === v));
     }
     $('#set-autopaste').checked = !!s.autoPaste;
     $('#set-login').checked = !!s.launchAtLogin;
+    $('#set-sounds').checked = s.sounds !== false;
+    $('#set-flowbar').checked = s.flowBar !== false;
 
     const badge = $('#eng-badge');
     badge.className = 'engine-badge' + (eng.ready ? ' ready' : !eng.loading ? ' error' : '');
@@ -311,7 +359,7 @@
     $('#eng-latency').textContent = st.avgLatencyMs ? `${(st.avgLatencyMs / 1000).toFixed(1).replace('.', ',')} s` : '—';
     $('#eng-cache').textContent = s.modelCache || '—';
     $('#eng-cache').title = s.modelCache || '';
-    $('#version').textContent = `FreeFlow ${state.version} · données : ${state.paths.userData}`;
+    $('#version').textContent = `OxoFlow ${state.version} · données : ${state.paths.userData}`;
     const micSel = $('#set-mic');
     if (micSel.querySelector(`option[value="${CSS.escape(s.microphoneId)}"]`)) micSel.value = s.microphoneId;
   }
@@ -330,7 +378,7 @@
   // ---- per-OS wording
   if (MAC) {
     $('#autopaste-sub').textContent = 'Sinon le texte est seulement copié : colle-le avec ⌘V.';
-    $('#login-sub').textContent = 'FreeFlow attend dans la barre des menus.';
+    $('#login-sub').textContent = 'OxoFlow attend dans la barre des menus.';
     $('#theme-sub').textContent = 'Suit le thème de macOS par défaut.';
   }
   document.addEventListener('click', async (e) => {
@@ -464,6 +512,14 @@
   $('#set-mic').addEventListener('change', (e) => ff.invoke('ff:set-settings', { microphoneId: e.target.value }));
   $('#set-autopaste').addEventListener('change', (e) => ff.invoke('ff:set-settings', { autoPaste: e.target.checked }));
   $('#set-login').addEventListener('change', (e) => ff.invoke('ff:set-settings', { launchAtLogin: e.target.checked }));
+  $('#set-sounds').addEventListener('change', (e) => ff.invoke('ff:set-settings', { sounds: e.target.checked }));
+  $('#set-flowbar').addEventListener('change', (e) => ff.invoke('ff:set-settings', { flowBar: e.target.checked }));
+  $('#step-mic-btn').addEventListener('click', async () => { if (await ff.invoke('ff:mic-prompt')) toast('Micro autorisé'); });
+  $('#step-fn-btn').addEventListener('click', () => ff.invoke('ff:open-keyboard-settings'));
+  $('#shortcut-fn').addEventListener('click', async () => {
+    await ff.invoke('ff:set-settings', { shortcut: 'Fn', mode: 'ptt' });
+    toast('Raccourci : maintenir fn');
+  });
   $('#open-logs').addEventListener('click', () => ff.invoke('ff:open-logs'));
   $('#open-data').addEventListener('click', () => ff.invoke('ff:open-path', state.paths.userData));
 
@@ -483,7 +539,7 @@
   const MOD_CODES = { ControlLeft: 'Ctrl', ControlRight: 'Ctrl', AltLeft: 'Alt', AltRight: 'Alt', ShiftLeft: 'Shift', ShiftRight: 'Shift', MetaLeft: 'Super', MetaRight: 'Super', OSLeft: 'Super', OSRight: 'Super' };
   const MOD_FLAG = { Ctrl: 'ctrlKey', Alt: 'altKey', Shift: 'shiftKey', Super: 'metaKey' };
   const KEY_LABEL = MAC
-    ? { Ctrl: '⌃', Alt: '⌥', Shift: '⇧', Super: '⌘', Space: 'Espace', Enter: '↩', Backspace: '⌫', Delete: '⌦', Tab: '⇥', Up: '↑', Down: '↓', Left: '←', Right: '→', Capslock: '⇪' }
+    ? { Fn: 'fn', Ctrl: '⌃', Alt: '⌥', Shift: '⇧', Super: '⌘', Space: 'Espace', Enter: '↩', Backspace: '⌫', Delete: '⌦', Tab: '⇥', Up: '↑', Down: '↓', Left: '←', Right: '→', Capslock: '⇪' }
     : { Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Maj', Super: 'Win', Space: 'Espace', Enter: 'Entrée', Backspace: 'Retour', Delete: 'Suppr', Insert: 'Inser', Up: '↑', Down: '↓', Left: '←', Right: '→', Capslock: 'Verr. Maj' };
   const MODS_TEXT = MAC ? '⌃, ⌥, ⇧ ou ⌘' : 'Ctrl, Alt, Maj ou Win';
   const MOD_EXAMPLE = MAC ? '⌃ + ⌘' : 'Ctrl + Win';
@@ -592,6 +648,43 @@
     const pos = (before + sep + text).length;
     ta.setSelectionRange(pos, pos);
     ta.focus();
+  });
+
+  // Live microphone level -> hero waveform + try-zone halo (only while listening).
+  const waveBars = Array.from(wave.children);
+  const lvHist = new Array(Math.ceil(waveBars.length / 2)).fill(0);
+  let liveTimer = null;
+  ff.on('ff:level', (v) => {
+    if (phase !== 'listening') return;
+    lvHist.shift(); lvHist.push(v);
+    const hero = $('#hero');
+    hero.classList.add('live');
+    const mid = (waveBars.length - 1) / 2;
+    waveBars.forEach((b, i) => {
+      const d = Math.round(Math.abs(i - mid));
+      const lv = lvHist[lvHist.length - 1 - Math.min(d, lvHist.length - 1)] || 0;
+      b.style.setProperty('--lv', (1 + lv * 7 * (1 - d / (mid + 2))).toFixed(2));
+    });
+    $('#mic-btn').style.setProperty('--lv', (1 + v * 0.6).toFixed(2));
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(() => { hero.classList.remove('live'); waveBars.forEach((b) => b.style.removeProperty('--lv')); }, 400);
+  });
+
+  // Keyboard: Cmd/Ctrl+1..5 sections, Cmd/Ctrl+F search, Esc clears a search.
+  const SECTIONS = ['home', 'history', 'dictionary', 'snippets', 'settings'];
+  window.addEventListener('keydown', (e) => {
+    if (sc.recording) return;
+    const mod = MAC ? e.metaKey : e.ctrlKey;
+    if (mod && !e.altKey && !e.shiftKey && /^Digit[1-5]$/.test(e.code)) { e.preventDefault(); navigate(SECTIONS[Number(e.code.slice(5)) - 1]); return; }
+    if (mod && e.code === 'KeyF') {
+      e.preventDefault();
+      const active = document.querySelector('.section.active');
+      let input = active && active.querySelector('input[type=search]');
+      if (!input) { navigate('history'); input = $('#history-search'); }
+      input.focus(); input.select();
+      return;
+    }
+    if (e.key === 'Escape' && e.target.matches('input[type=search]') && e.target.value) { e.target.value = ''; e.target.dispatchEvent(new Event('input')); }
   });
 
   // Relative times ("il y a 3 min") stay fresh.

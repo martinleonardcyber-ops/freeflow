@@ -1,9 +1,9 @@
 #!/bin/sh
-# FreeFlow on macOS (Apple Silicon): installs everything needed to run `npm start`.
+# OxoFlow on macOS (Apple Silicon): installs everything needed to run `npm start`.
 #   - Node dependencies + the Electron binary (npm >= 11 skips install scripts)
 #   - stt/.venv with MLX Whisper (GPU / Metal) and faster-whisper (voice detection, CPU fallback)
 #   - native/PasteHelperMac (Cmd+V through CGEvent)
-# The speech model (~1.6 GB) is downloaded by FreeFlow itself on first start.
+# The speech model (~1.6 GB) is downloaded by OxoFlow itself on first start.
 set -e
 cd "$(dirname "$0")/.."
 
@@ -22,5 +22,6 @@ fi
 
 echo "3/3 Collage (Swift)"
 swiftc -O -o native/PasteHelperMac native/PasteHelperMac.swift
+swiftc -O -o native/FnKeyMac native/FnKeyMac.swift
 
-echo "Prêt. Lance FreeFlow avec : npm start"
+echo "Prêt. Lance OxoFlow avec : npm start"

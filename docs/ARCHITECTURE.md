@@ -1,6 +1,6 @@
-# Architecture de FreeFlow
+# Architecture de OxoFlow
 
-FreeFlow est une application Electron (interface, raccourci, collage) qui pilote un petit serveur de transcription local en Python (faster-whisper). Les deux parlent en HTTP sur `127.0.0.1` uniquement : rien n'écoute sur le réseau.
+OxoFlow est une application Electron (interface, raccourci, collage) qui pilote un petit serveur de transcription local en Python (faster-whisper). Les deux parlent en HTTP sur `127.0.0.1` uniquement : rien n'écoute sur le réseau.
 
 ```
                          Ctrl+Alt+Espace (globalShortcut)  ou  touche maintenue (uiohook-napi)
@@ -56,7 +56,7 @@ freeflow/
 │   └── build_stt.py          PyInstaller onedir + copie des DLL cuBLAS 12 / cuDNN 9
 ├── native/
 │   └── PasteHelper.cs        collage simulé (SendInput), --dry-run, --info, --mask
-├── installer/installer.nsh   règles de l'installateur (fermer FreeFlow avant mise à jour, nettoyage)
+├── installer/installer.nsh   règles de l'installateur (fermer OxoFlow avant mise à jour, nettoyage)
 ├── assets/                   icônes (make_icon.py) et police Figtree
 ├── dev/                      aperçu de l'interface dans un navigateur (faux pont, données de démo)
 └── docs/                     cette page et les captures du README
@@ -66,9 +66,9 @@ freeflow/
 
 | Où | Quoi |
 |---|---|
-| `%LOCALAPPDATA%\Programs\FreeFlow` | l'application installée |
-| `%LOCALAPPDATA%\FreeFlow\models` | le modèle téléchargé au premier lancement (cache Hugging Face) |
-| `%APPDATA%\FreeFlow` | `settings.json`, `dictionary.json`, `snippets.json`, `history.json`, `logs\freeflow.log` |
+| `%LOCALAPPDATA%\Programs\OxoFlow` | l'application installée |
+| `%LOCALAPPDATA%\OxoFlow\models` | le modèle téléchargé au premier lancement (cache Hugging Face) |
+| `%APPDATA%\OxoFlow` | `settings.json`, `dictionary.json`, `snippets.json`, `history.json`, `logs\oxoflow.log` |
 
 Le dossier du modèle se change dans `settings.json` (`modelCache`).
 
@@ -83,14 +83,14 @@ Variables d'environnement reconnues par `stt_server.py` :
 | `FREEFLOW_CPU_MODEL` | modèle sur processeur | `small` |
 | `FREEFLOW_DEVICE` | forcer `mlx`, `cuda` ou `cpu` | MLX sur Mac Apple Silicon, sinon essai GPU puis CPU |
 | `FREEFLOW_MLX_MODEL` | modèle MLX sur Mac | `mlx-community/whisper-large-v3-turbo` |
-| `FREEFLOW_TOKEN` | secret exigé (en-tête `X-FreeFlow-Token`) sur `POST /transcribe` et `/shutdown` | fourni par l'application (`%APPDATA%\FreeFlow\engine.token`) ; vide = pas de contrôle |
+| `FREEFLOW_TOKEN` | secret exigé (en-tête `X-FreeFlow-Token`) sur `POST /transcribe` et `/shutdown` | fourni par l'application (`%APPDATA%\OxoFlow\engine.token`) ; vide = pas de contrôle |
 | `HF_HOME` | cache des modèles | fourni par l'application |
 
 Le moteur n'écoute que sur `127.0.0.1`, refuse les requêtes dont l'en-tête `Host` n'est pas local (rebinding DNS) et n'envoie aucun en-tête CORS : une page web ouverte dans le navigateur ne peut ni l'arrêter ni s'en servir.
 
 `GET /health` renvoie `phase` (`starting`, `downloading`, `loading`, `ready`, `error`) et, pendant le premier téléchargement, `download: {model, done, total}` en octets. L'application affiche cette progression dans la fenêtre et dans l'info-bulle de l'icône.
 
-Sans carte NVIDIA détectée, le gros modèle n'est jamais téléchargé : FreeFlow charge directement `small` sur le processeur.
+Sans carte NVIDIA détectée, le gros modèle n'est jamais téléchargé : OxoFlow charge directement `small` sur le processeur.
 
 ## Commandes de vérification
 
@@ -128,7 +128,7 @@ python -m http.server 3300
 | `PasteHelper.exe` (SendInput, Ctrl+V) | `PasteHelperMac` (CGEvent, ⌘V) ; renvoie `blocked` + `reason: accessibility` sans la permission Accessibilité |
 | zone de notification | barre des menus (icônes *template* `trayTemplate.png`, `assets/make_tray_mac.py`), Dock masqué quand la fenêtre est fermée |
 | fenêtre classique | `titleBarStyle: hiddenInset` + `vibrancy: sidebar` ; le hub lit `window.freeflow.platform` pour ses libellés (⌃⌥⇧⌘) |
-| pastille | `type: panel` : elle n'active jamais FreeFlow, donc ⌘V arrive dans l'app de l'utilisateur |
+| pastille | `type: panel` : elle n'active jamais OxoFlow, donc ⌘V arrive dans l'app de l'utilisateur |
 
 - `PasteHelperMac` attend un peu après avoir posté ⌘V : macOS jette les événements d'un processus qui se termine aussitôt.
 - Le mode « Maintenir pour parler » (uiohook) ne démarre qu'avec la permission Accessibilité.

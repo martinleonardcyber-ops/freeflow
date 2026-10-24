@@ -1,4 +1,4 @@
-// FreeFlow PasteHelper - tiny console tool that simulates the paste shortcut
+// OxoFlow PasteHelper - tiny console tool that simulates the paste shortcut
 // (Ctrl+V, or Shift+Insert with --shift-insert) with SendInput, after releasing
 // any modifier key the user may still be holding (mirrors Wispr Flow's
 // "WindowsKeyUpSimulation" + PasteText/PasteOutcome flow).

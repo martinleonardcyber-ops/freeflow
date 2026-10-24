@@ -1,10 +1,10 @@
 {
-  "name": "freeflow",
-  "productName": "FreeFlow",
+  "name": "oxoflow",
+  "productName": "OxoFlow",
   "version": "1.1.0",
   "description": "Dictée vocale 100 % locale pour Windows et macOS : tu parles, le texte s'écrit là où tu tapes.",
   "main": "main.js",
-  "author": "Alan",
+  "author": "Martin (OxoFlow), d’après FreeFlow d’Alan",
   "license": "MIT",
   "private": true,
   "homepage": "https://github.com/AlanECE/freeflow",
@@ -16,16 +16,16 @@
     "start": "electron .",
     "build:stt": "python stt/build_stt.py",
     "setup:mac": "sh scripts/setup-mac.sh",
-    "build:native:mac": "swiftc -O -o native/PasteHelperMac native/PasteHelperMac.swift",
+    "build:native:mac": "swiftc -O -o native/PasteHelperMac native/PasteHelperMac.swift && swiftc -O -o native/FnKeyMac native/FnKeyMac.swift",
     "build:native": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /optimize /target:exe /out:native/PasteHelper.exe native/PasteHelper.cs",
-    "package": "npx @electron/packager . FreeFlow --platform=win32 --arch=x64 --overwrite --icon=assets/icon.ico --extra-resource=stt/dist/freeflow-stt --extra-resource=native/PasteHelper.exe --out=dist --ignore=\"^/stt($|/)\" --ignore=\"^/native/PasteHelper\\.cs$\" --ignore=\"^/screenshots($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/release($|/)\" --ignore=\"^/installer($|/)\" --ignore=\"^/docs($|/)\" --ignore=\"^/dev($|/)\" --ignore=\"^/\\.git($|/)\" --ignore=\"^/\\.gitignore$\" --ignore=\"^/assets/make_icon\\.py$\" --ignore=\"^/README\\.md$\"",
-    "package:release": "npx @electron/packager . FreeFlow --platform=win32 --arch=x64 --overwrite --icon=assets/icon.ico --extra-resource=stt/dist/freeflow-stt --extra-resource=native/PasteHelper.exe --out=release --ignore=\"^/stt($|/)\" --ignore=\"^/native/PasteHelper\\.cs$\" --ignore=\"^/screenshots($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/release($|/)\" --ignore=\"^/installer($|/)\" --ignore=\"^/docs($|/)\" --ignore=\"^/dev($|/)\" --ignore=\"^/\\.git($|/)\" --ignore=\"^/\\.gitignore$\" --ignore=\"^/assets/make_icon\\.py$\" --ignore=\"^/README\\.md$\"",
-    "installer": "electron-builder --win nsis --x64 --prepackaged release/FreeFlow-win32-x64 --publish never",
+    "package": "npx @electron/packager . OxoFlow --platform=win32 --arch=x64 --overwrite --icon=assets/icon.ico --extra-resource=stt/dist/freeflow-stt --extra-resource=native/PasteHelper.exe --out=dist --ignore=\"^/stt($|/)\" --ignore=\"^/native/PasteHelper\\.cs$\" --ignore=\"^/screenshots($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/release($|/)\" --ignore=\"^/installer($|/)\" --ignore=\"^/docs($|/)\" --ignore=\"^/dev($|/)\" --ignore=\"^/\\.git($|/)\" --ignore=\"^/\\.gitignore$\" --ignore=\"^/assets/make_icon\\.py$\" --ignore=\"^/README\\.md$\"",
+    "package:release": "npx @electron/packager . OxoFlow --platform=win32 --arch=x64 --overwrite --icon=assets/icon.ico --extra-resource=stt/dist/freeflow-stt --extra-resource=native/PasteHelper.exe --out=release --ignore=\"^/stt($|/)\" --ignore=\"^/native/PasteHelper\\.cs$\" --ignore=\"^/screenshots($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/release($|/)\" --ignore=\"^/installer($|/)\" --ignore=\"^/docs($|/)\" --ignore=\"^/dev($|/)\" --ignore=\"^/\\.git($|/)\" --ignore=\"^/\\.gitignore$\" --ignore=\"^/assets/make_icon\\.py$\" --ignore=\"^/README\\.md$\"",
+    "installer": "electron-builder --win nsis --x64 --prepackaged release/OxoFlow-win32-x64 --publish never",
     "release": "npm run package:release && npm run installer"
   },
   "build": {
-    "appId": "com.alan.freeflow",
-    "productName": "FreeFlow",
+    "appId": "com.oxoria.oxoflow",
+    "productName": "OxoFlow",
     "copyright": "© 2026 Alan — licence MIT",
     "directories": {
       "output": "release/installer",
@@ -52,7 +52,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "FreeFlow",
+      "shortcutName": "OxoFlow",
       "runAfterFinish": true,
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
@@ -65,8 +65,8 @@
       "differentialPackage": false,
       "deleteAppDataOnUninstall": false,
       "include": "installer/installer.nsh",
-      "artifactName": "FreeFlow-Setup.exe",
-      "uninstallDisplayName": "FreeFlow"
+      "artifactName": "OxoFlow-Setup.exe",
+      "uninstallDisplayName": "OxoFlow"
     }
   },
   "devDependencies": {

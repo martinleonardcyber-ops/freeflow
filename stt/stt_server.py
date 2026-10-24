@@ -1,4 +1,4 @@
-"""FreeFlow STT sidecar.
+"""OxoFlow STT sidecar.
 
 Local replacement for Wispr Flow's cloud speech backend (api.wisprflow.ai).
 Stdlib-only HTTP server in front of faster-whisper:
@@ -86,7 +86,8 @@ def _setup_cuda_dlls():
         _log("no extra CUDA DLL dir found (GPU may be unavailable)")
 
 
-_setup_cuda_dlls()
+if sys.platform == "win32":
+    _setup_cuda_dlls()
 
 import numpy as np  # noqa: E402
 from faster_whisper import WhisperModel, decode_audio  # noqa: E402
@@ -98,6 +99,7 @@ CPU_MODEL = os.environ.get("FREEFLOW_CPU_MODEL", "small")
 FORCE_DEVICE = os.environ.get("FREEFLOW_DEVICE", "").lower().strip()
 MLX_MODEL = os.environ.get("FREEFLOW_MLX_MODEL", "mlx-community/whisper-large-v3-turbo")
 SAMPLE_RATE = 16000
+MIN_SPEECH = 0.35 + 0.4   # seconds of speech, including the 2 x 200 ms VAD padding
 TOKEN = os.environ.get("FREEFLOW_TOKEN", "")
 _ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}", "127.0.0.1", "localhost"}
 # Files faster-whisper needs from a CTranslate2 Whisper repo (same list as download_model).
@@ -366,7 +368,9 @@ def _speech_only(audio):
     Returns None when no speech at all was found."""
     from faster_whisper.vad import VadOptions, get_speech_timestamps
     stamps = get_speech_timestamps(audio, VadOptions(min_silence_duration_ms=300, speech_pad_ms=200))
-    if not stamps:
+    # Under ~0.35 s of speech in total (a click, a breath, a chime) Whisper invents a
+    # word ("Oh", "Voilà", "Merci"): treat it as silence.
+    if not stamps or sum(st["end"] - st["start"] for st in stamps) < MIN_SPEECH * SAMPLE_RATE:
         return None
     gap = np.zeros(int(0.1 * SAMPLE_RATE), dtype=np.float32)
     parts = []
@@ -439,7 +443,9 @@ def transcribe(body, lang="auto", hints=None):
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def log_message(self, fmt, *args):  # quieter than the default
+    def log_message(self, fmt, *args):  # quieter than the default; the app polls /health every second
+        if self.path in ("/health", "/") and args and str(args[1] if len(args) > 1 else "") == "200":
+            return
         _log(self.command, self.path, fmt % args)
 
     def _json(self, code, obj):

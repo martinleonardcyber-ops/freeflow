@@ -27,7 +27,7 @@
   const total = history.reduce((a, h) => a + h.words, 0);
   const state = {
     version: '1.1.0', user: 'alan', phase: 'idle', pttAvailable: true, shortcutOk: true, shortcutSuspended: false, platform: 'win32',
-    settings: { shortcut: 'Ctrl+Alt+Space', mode: 'toggle', language: 'auto', autoPaste: true, launchAtLogin: false, microphoneId: 'default', modelCache: 'C:\\Users\\alan\\AppData\\Local\\FreeFlow\\models', theme: 'system' },
+    settings: { shortcut: 'Ctrl+Alt+Space', mode: 'toggle', language: 'auto', autoPaste: true, launchAtLogin: false, microphoneId: 'default', modelCache: 'C:\\Users\\alan\\AppData\\Local\\OxoFlow\\models', theme: 'system' },
     dictionary: [
       { word: 'n8n', sounds: ['n huit n', 'aine huit aine', 'en huit en'] },
       { word: 'Higgsfield', sounds: ['x field', 'hicks field', 'higgs field'] },
@@ -46,11 +46,20 @@
     stats: { wordsToday: 61, totalWords: total, dictations: history.length, avgWpm: 142, avgLatencyMs: 640, minutesSpoken: 9, minutesSaved: Math.round(total / 40 - 9), typingWpm: 40, daily, streak: 3 },
     sidecar: { ready: true, loading: false, phase: 'ready', device: 'cuda', model: 'large-v3', compute_type: 'float16', port: 48123, load_ms: 6400, transcriptions: 12 },
     loadingLabel: '', loadingShort: '',
-    paths: { userData: 'C:\\Users\\alan\\AppData\\Roaming\\FreeFlow', logs: '' },
+    paths: { userData: 'C:\\Users\\alan\\AppData\\Roaming\\OxoFlow', logs: '' },
   };
   if (params.get('engine') === 'downloading') {
     state.sidecar = { ready: false, loading: true, phase: 'downloading', download: { done: 1.3e9, total: 3.1e9 }, port: 48123 };
     state.loadingLabel = 'Téléchargement du modèle · 41 % (1,3 / 3,1 Go)'; state.loadingShort = 'Téléchargement · 41 %';
+  }
+  // ?platform=darwin: Mac layout and wording. ?setup=1: first start (engine downloading, permissions missing).
+  state.platform = params.get('platform') || 'win32';
+  state.accessibility = true; state.microphone = 'granted';
+  if (state.platform === 'darwin') { state.settings.shortcut = 'Fn'; state.settings.mode = 'ptt'; state.fnUsage = params.get('setup') ? -1 : 0; }
+  if (params.get('setup')) {
+    state.accessibility = false; state.microphone = 'not-determined';
+    state.sidecar = { ready: false, loading: true, phase: 'downloading', download: { done: 0.66e9, total: 1.61e9 }, port: 48123 };
+    state.loadingLabel = 'Téléchargement du modèle · 41 % (0,7 / 1,6 Go)'; state.loadingShort = 'Téléchargement · 41 %';
   }
   if (params.get('empty')) { state.history = []; state.stats = { ...state.stats, wordsToday: 0, totalWords: 0, dictations: 0, avgWpm: 0, minutesSaved: 0, minutesSpoken: 0, streak: 0, daily: daily.map((d) => ({ ...d, words: 0 })) }; }
 
@@ -80,7 +89,11 @@
     'ff:history': ({ action, id }) => { state.history = action === 'clear' ? [] : state.history.filter((h) => h.id !== id); push(); return state.history; },
     'ff:dictation-toggle': () => {
       const set = (phase, extra = {}) => { state.phase = phase; emit('ff:dictation', { phase, ...extra }); };
-      if (state.phase === 'idle') set('listening', { startedAt: Date.now() });
+      if (state.phase === 'idle') {
+        set('listening', { startedAt: Date.now() });
+        // fake voice: a few syllables per second
+        let t = 0; const iv = setInterval(() => { if (state.phase !== 'listening') return clearInterval(iv); t += 0.1; emit('ff:level', Math.max(0, Math.sin(t * 7) * 0.5 + Math.random() * 0.4)); }, 100);
+      }
       else if (state.phase === 'listening') {
         set('transcribing');
         setTimeout(() => { emit('ff:insert', 'Ceci est un essai de dictée, transcrit en local.'); set('done', { latencyMs: 610, pasted: 'hub' }); }, 900);
@@ -89,9 +102,12 @@
       return state.phase;
     },
     'ff:shortcut-test': () => ({ ok: true }),
+    'ff:mic-prompt': () => { state.microphone = 'granted'; push(); return true; },
+    'ff:accessibility-prompt': () => { state.accessibility = true; push(); return true; },
     'ff:shortcut-suspend': (on) => ({ suspended: on, ok: true }),
   };
   window.freeflow = {
+    platform: state.platform,
     invoke: async (ch, ...a) => (handlers[ch] ? handlers[ch](...a) : null),
     send: () => {},
     on: (ch, cb) => { (listeners[ch] = listeners[ch] || []).push(cb); return () => {}; },
