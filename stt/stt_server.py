@@ -18,7 +18,10 @@ Prints READY on stdout once the model is loaded and warm. Env vars:
   FREEFLOW_PORT     listening port (default 48123)
   FREEFLOW_MODEL    whisper model for the GPU path (default large-v3)
   FREEFLOW_CPU_MODEL fallback model when CUDA fails (default small)
-  FREEFLOW_DEVICE   force "cuda" or "cpu" (default: try cuda, fall back to cpu)
+  FREEFLOW_DEVICE   force "mlx", "cuda" or "cpu" (default: mlx on Apple Silicon,
+                    else cuda, then cpu)
+  FREEFLOW_MLX_MODEL MLX Whisper repo on Apple Silicon (default
+                    mlx-community/whisper-large-v3-turbo)
   FREEFLOW_TOKEN    shared secret for the POST endpoints (empty = no check, manual runs)
   HF_HOME           Hugging Face cache (the app passes <userData>\\models)
 
@@ -30,6 +33,7 @@ import hmac
 import io
 import json
 import os
+import platform
 import site
 import sys
 import threading
@@ -92,6 +96,8 @@ PORT = int(os.environ.get("FREEFLOW_PORT", "48123"))
 GPU_MODEL = os.environ.get("FREEFLOW_MODEL", "large-v3")
 CPU_MODEL = os.environ.get("FREEFLOW_CPU_MODEL", "small")
 FORCE_DEVICE = os.environ.get("FREEFLOW_DEVICE", "").lower().strip()
+MLX_MODEL = os.environ.get("FREEFLOW_MLX_MODEL", "mlx-community/whisper-large-v3-turbo")
+SAMPLE_RATE = 16000
 TOKEN = os.environ.get("FREEFLOW_TOKEN", "")
 _ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}", "127.0.0.1", "localhost"}
 # Files faster-whisper needs from a CTranslate2 Whisper repo (same list as download_model).
@@ -134,11 +140,11 @@ def _dir_bytes(d):
     return total
 
 
-def _expected_bytes(repo_id):
+def _expected_bytes(repo_id, prefixes=_MODEL_FILES):
     try:
         from huggingface_hub import HfApi
         info = HfApi().model_info(repo_id, files_metadata=True)
-        return sum(s.size or 0 for s in info.siblings if s.rfilename.startswith(_MODEL_FILES)) or None
+        return sum(s.size or 0 for s in info.siblings if prefixes is None or s.rfilename.startswith(prefixes)) or None
     except Exception as e:
         _log(f"model size unknown ({type(e).__name__}: {e})")
         return None
@@ -155,6 +161,29 @@ def _complete(path):
     return all(os.path.isfile(os.path.join(path, n)) for n in need) and any(n.startswith("vocabulary.") for n in names)
 
 
+def _download_with_progress(name, repo_id, fetch, prefixes=_MODEL_FILES):
+    """Run fetch() (a blocking Hugging Face download) while STATE reports the bytes on disk."""
+    cache = _repo_dir(repo_id)
+    dl = {"model": name, "done": _dir_bytes(cache), "total": None}
+    STATE.update(phase="downloading", download=dl)
+    _log(f"{name} not in local cache, downloading {repo_id}...")
+    dl["total"] = _expected_bytes(repo_id, prefixes)
+    stop = threading.Event()
+
+    def poll():
+        while not stop.wait(0.5):
+            dl["done"] = _dir_bytes(cache)
+
+    threading.Thread(target=poll, daemon=True).start()
+    try:
+        path = fetch()
+    finally:
+        stop.set()
+    dl["done"] = dl["total"] or _dir_bytes(cache)
+    _log(f"downloaded {repo_id} ({dl['done'] / 1e9:.2f} GB)")
+    return path
+
+
 def _ensure_model(name):
     """Local path of the model, downloading it first (with progress in STATE) if needed.
     An interrupted download resumes where it stopped."""
@@ -166,25 +195,65 @@ def _ensure_model(name):
     except Exception:
         pass
     repo_id = _MODELS.get(name, name)
-    cache = _repo_dir(repo_id)
-    dl = {"model": name, "done": _dir_bytes(cache), "total": None}
-    STATE.update(phase="downloading", download=dl)
-    _log(f"{name} not in local cache, downloading {repo_id}...")
-    dl["total"] = _expected_bytes(repo_id)
-    stop = threading.Event()
+    return _download_with_progress(name, repo_id, lambda: download_model(name))
 
-    def poll():
-        while not stop.wait(0.5):
-            dl["done"] = _dir_bytes(cache)
 
-    threading.Thread(target=poll, daemon=True).start()
+# ---------------------------------------------------------------------------
+# Apple Silicon: MLX Whisper on the GPU (Metal). faster-whisper has no Metal
+# backend, so on a Mac it would only use the CPU.
+# ---------------------------------------------------------------------------
+def _mlx_available():
+    if sys.platform != "darwin" or platform.machine() != "arm64":
+        return False
     try:
-        path = download_model(name)
-    finally:
-        stop.set()
-    dl["done"] = dl["total"] or _dir_bytes(cache)
-    _log(f"downloaded {repo_id} ({dl['done'] / 1e9:.2f} GB)")
-    return path
+        import mlx.core  # noqa: F401
+        import mlx_whisper  # noqa: F401
+        return True
+    except Exception as e:
+        _log(f"MLX unavailable ({type(e).__name__}: {e})")
+        return False
+
+
+def _mlx_complete(path):
+    try:
+        names = os.listdir(path)
+    except OSError:
+        return False
+    return "config.json" in names and any(n.startswith("weights.") for n in names)
+
+
+def _ensure_mlx_model(repo_id):
+    from huggingface_hub import snapshot_download
+    try:
+        path = snapshot_download(repo_id, local_files_only=True)
+        if _mlx_complete(path):
+            return path
+        _log(f"{repo_id}: incomplete local copy, resuming the download")
+    except Exception:
+        pass
+    return _download_with_progress(repo_id.split("/")[-1].replace("whisper-", ""), repo_id,
+                                   lambda: snapshot_download(repo_id), prefixes=None)
+
+
+class MlxModel:
+    """faster-whisper-like facade over mlx_whisper (greedy decoding: MLX has no beam search)."""
+
+    def __init__(self, path):
+        import mlx_whisper
+        self._transcribe = mlx_whisper.transcribe
+        self.path = path
+
+    def run(self, audio, language=None, initial_prompt=None):
+        r = self._transcribe(
+            audio,
+            path_or_hf_repo=self.path,
+            language=language,
+            initial_prompt=initial_prompt,
+            condition_on_previous_text=False,
+            temperature=(0.0, 0.2, 0.4),
+            verbose=None,
+        )
+        return r.get("segments") or [], r.get("language")
 
 
 def _cuda_devices():
@@ -197,6 +266,10 @@ def _cuda_devices():
 
 
 def _load(model_name, device, compute_type):
+    if device == "mlx":
+        path = _ensure_mlx_model(model_name)
+        STATE.update(phase="loading", download=None)
+        return MlxModel(path)
     path = _ensure_model(model_name)
     STATE.update(phase="loading", download=None)
     return WhisperModel(path, device=device, compute_type=compute_type)
@@ -205,6 +278,9 @@ def _load(model_name, device, compute_type):
 def _warm(model):
     """First CUDA call initialises cuBLAS/cuDNN; do it before announcing READY."""
     silence = np.zeros(16000, dtype=np.float32)
+    if isinstance(model, MlxModel):   # compiles the Metal kernels
+        model.run(silence, language="fr")
+        return
     segs, _ = model.transcribe(silence, beam_size=1, vad_filter=False, language="fr")
     list(segs)
 
@@ -213,12 +289,16 @@ def load_model():
     global MODEL
     t0 = time.time()
     attempts = []
+    if FORCE_DEVICE == "mlx" or (FORCE_DEVICE in ("", "mlx") and _mlx_available()):
+        attempts.append((MLX_MODEL, "mlx", "float16"))
     # No NVIDIA GPU: skip the large GPU model entirely (no multi-GB download for nothing).
-    if FORCE_DEVICE == "cuda" or (FORCE_DEVICE != "cpu" and _cuda_devices() > 0):
+    if sys.platform == "darwin":
+        pass                                                    # no CUDA on macOS
+    elif FORCE_DEVICE == "cuda" or (FORCE_DEVICE not in ("cpu", "mlx") and _cuda_devices() > 0):
         attempts.append((GPU_MODEL, "cuda", "float16"))
         attempts.append((GPU_MODEL, "cuda", "int8_float16"))   # GPUs with less VRAM
         attempts.append((GPU_MODEL, "cuda", "int8"))           # older GPUs without fast float16 (GTX 10xx)
-    if FORCE_DEVICE != "cuda":
+    if FORCE_DEVICE not in ("cuda", "mlx"):
         attempts.append((CPU_MODEL, "cpu", "int8"))
     last_err = None
     for name, device, ctype in attempts:
@@ -227,8 +307,9 @@ def load_model():
             m = _load(name, device, ctype)
             _warm(m)
             MODEL = m
+            label = name.split("/")[-1].replace("whisper-", "") if device == "mlx" else name
             STATE.update(ready=True, loading=False, phase="ready", download=None, device=device,
-                         compute_type=ctype, model=name, load_ms=int((time.time() - t0) * 1000), error=None)
+                         compute_type=ctype, model=label, load_ms=int((time.time() - t0) * 1000), error=None)
             _log(f"model ready: {name} {device}/{ctype} in {STATE['load_ms']} ms")
             print("READY", flush=True)
             return
@@ -267,6 +348,44 @@ def _wav_to_float32(body):
         return pcm
 
 
+# Whisper's classic outputs on noise/silence (YouTube subtitle credits). Dropped
+# only when they are the whole transcript.
+_HALLUCINATIONS = (
+    "sous-titres réalisés par la communauté d'amara.org", "sous-titrage st' 501", "sous-titrage société radio-canada",
+    "merci d'avoir regardé cette vidéo", "merci d'avoir regardé", "thank you for watching", "thanks for watching",
+)
+
+
+def _is_hallucination(text):
+    t = text.strip().strip(".!… ").lower().replace("’", "'")
+    return any(t == h or t == h.rstrip(".") for h in _HALLUCINATIONS)
+
+
+def _speech_only(audio):
+    """Silero VAD (shipped with faster-whisper): keep the speech, drop the silences.
+    Returns None when no speech at all was found."""
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
+    stamps = get_speech_timestamps(audio, VadOptions(min_silence_duration_ms=300, speech_pad_ms=200))
+    if not stamps:
+        return None
+    gap = np.zeros(int(0.1 * SAMPLE_RATE), dtype=np.float32)
+    parts = []
+    for st in stamps:
+        parts.extend((audio[st["start"]:st["end"]], gap))
+    return np.concatenate(parts[:-1])
+
+
+def _transcribe_mlx(audio, language, initial_prompt):
+    speech = _speech_only(audio)
+    if speech is None:
+        return [], language or "fr", 1.0
+    with MODEL_LOCK:
+        segs, lang = MODEL.run(speech, language=language, initial_prompt=initial_prompt)
+    out = [{"start": round(float(s.get("start", 0)), 2), "end": round(float(s.get("end", 0)), 2), "text": str(s.get("text", "")).strip()}
+           for s in segs if s.get("no_speech_prob", 0) < 0.8]
+    return out, lang or language or "fr", 1.0
+
+
 def transcribe(body, lang="auto", hints=None):
     audio = _wav_to_float32(body)
     audio_ms = int(len(audio) / 16.0)
@@ -277,6 +396,15 @@ def transcribe(body, lang="auto", hints=None):
         # its "Dictionary" to the server.
         initial_prompt = ", ".join(h.strip() for h in hints if h.strip())
     t0 = time.time()
+    if isinstance(MODEL, MlxModel):
+        segs, detected, prob = _transcribe_mlx(audio, language, initial_prompt)
+        text = " ".join(s["text"] for s in segs if s["text"]).strip()
+        if _is_hallucination(text):
+            _log(f"dropped a hallucination: {text!r}")
+            text, segs = "", []
+        STATE["transcriptions"] += 1
+        return {"text": text, "language": detected, "language_probability": prob,
+                "duration_ms": int((time.time() - t0) * 1000), "audio_ms": audio_ms, "segments": segs}
     with MODEL_LOCK:
         segments, info = MODEL.transcribe(
             audio,
@@ -291,6 +419,9 @@ def transcribe(body, lang="auto", hints=None):
         segs = [{"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text.strip()}
                 for s in segments]
     text = " ".join(s["text"] for s in segs if s["text"]).strip()
+    if _is_hallucination(text):
+        _log(f"dropped a hallucination: {text!r}")
+        text, segs = "", []
     STATE["transcriptions"] += 1
     return {
         "text": text,

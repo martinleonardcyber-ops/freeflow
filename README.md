@@ -2,7 +2,7 @@
 
 <h1 align="center">FreeFlow</h1>
 
-<p align="center"><b>La dictée vocale 100 % locale pour Windows.</b><br>
+<p align="center"><b>La dictée vocale 100 % locale pour Windows et macOS.</b><br>
 Un raccourci, tu parles, le texte s'écrit là où se trouve ton curseur.<br>
 Gratuit, open source, sans compte, sans abonnement, et rien ne quitte ton PC.</p>
 
@@ -53,6 +53,24 @@ FreeFlow reste dans la zone de notification (près de l'horloge) : clic droit su
 | Mémoire | 8 Go | 16 Go |
 
 Avec moins de mémoire vidéo, FreeFlow essaie d'abord une version allégée du modèle (`int8_float16`), puis le processeur.
+
+## Sur Mac (Apple Silicon)
+
+Sur Mac, FreeFlow transcrit avec **MLX Whisper `large-v3-turbo` sur la puce graphique** (Metal) : environ 0,3 s pour 7 s de voix sur une puce M récente. Pas encore d'installateur `.app` : on le lance depuis le code source.
+
+```bash
+git clone https://github.com/martinleonardcyber-ops/freeflow.git && cd freeflow
+npm run setup:mac    # Node, moteur Python (stt/.venv), collage Swift
+npm start
+```
+
+Il faut Node, Python 3.12 (ou `uv`) et les outils en ligne de commande Xcode (`xcode-select --install`). Au premier lancement :
+
+1. FreeFlow télécharge le modèle (**1,6 Go**, une seule fois) dans `~/Library/Application Support/FreeFlow/models`.
+2. macOS demande l'accès au **micro** : accepte.
+3. Pour coller tout seul, FreeFlow a besoin de la permission **Accessibilité** (simuler ⌘V). Un bandeau dans la fenêtre ouvre le bon réglage ; sans elle, le texte est seulement copié. La même permission active le mode « Maintenir pour parler ».
+
+FreeFlow vit dans la **barre des menus** ; l'icône du Dock n'apparaît que quand la fenêtre est ouverte. Le raccourci par défaut est `⌃⌥Espace`.
 
 ## Utiliser
 

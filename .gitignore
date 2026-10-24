@@ -15,3 +15,7 @@ native/*.exe
 .env
 .env.*
 *.local.json
+
+# macOS build outputs
+stt/.venv/
+native/PasteHelperMac

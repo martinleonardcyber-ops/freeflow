@@ -2,7 +2,7 @@
   "name": "freeflow",
   "productName": "FreeFlow",
   "version": "1.1.0",
-  "description": "Dictée vocale 100 % locale pour Windows : tu parles, le texte s'écrit là où tu tapes.",
+  "description": "Dictée vocale 100 % locale pour Windows et macOS : tu parles, le texte s'écrit là où tu tapes.",
   "main": "main.js",
   "author": "Alan",
   "license": "MIT",
@@ -15,6 +15,8 @@
   "scripts": {
     "start": "electron .",
     "build:stt": "python stt/build_stt.py",
+    "setup:mac": "sh scripts/setup-mac.sh",
+    "build:native:mac": "swiftc -O -o native/PasteHelperMac native/PasteHelperMac.swift",
     "build:native": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /optimize /target:exe /out:native/PasteHelper.exe native/PasteHelper.cs",
     "package": "npx @electron/packager . FreeFlow --platform=win32 --arch=x64 --overwrite --icon=assets/icon.ico --extra-resource=stt/dist/freeflow-stt --extra-resource=native/PasteHelper.exe --out=dist --ignore=\"^/stt($|/)\" --ignore=\"^/native/PasteHelper\\.cs$\" --ignore=\"^/screenshots($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/release($|/)\" --ignore=\"^/installer($|/)\" --ignore=\"^/docs($|/)\" --ignore=\"^/dev($|/)\" --ignore=\"^/\\.git($|/)\" --ignore=\"^/\\.gitignore$\" --ignore=\"^/assets/make_icon\\.py$\" --ignore=\"^/README\\.md$\"",
     "package:release": "npx @electron/packager . FreeFlow --platform=win32 --arch=x64 --overwrite --icon=assets/icon.ico --extra-resource=stt/dist/freeflow-stt --extra-resource=native/PasteHelper.exe --out=release --ignore=\"^/stt($|/)\" --ignore=\"^/native/PasteHelper\\.cs$\" --ignore=\"^/screenshots($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/release($|/)\" --ignore=\"^/installer($|/)\" --ignore=\"^/docs($|/)\" --ignore=\"^/dev($|/)\" --ignore=\"^/\\.git($|/)\" --ignore=\"^/\\.gitignore$\" --ignore=\"^/assets/make_icon\\.py$\" --ignore=\"^/README\\.md$\"",

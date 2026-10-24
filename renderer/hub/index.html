@@ -36,6 +36,7 @@
     <symbol id="i-type" viewBox="0 0 24 24"><path d="M5 6.5V5h14v1.5M12 5v14M9 19h6"/></symbol>
   </svg>
 
+  <div class="titlebar-drag" aria-hidden="true"></div>
   <aside class="sidebar">
     <div class="brand">
       <div class="logo" aria-hidden="true">
@@ -72,6 +73,11 @@
   <main class="content" id="content">
     <!-- HOME -->
     <section class="section" id="section-home">
+      <div class="banner" id="ax-banner-home" hidden>
+        <div class="banner-icon"><svg><use href="#i-shield"/></svg></div>
+        <div><strong>Autorise FreeFlow à coller le texte</strong><span>macOS demande la permission Accessibilité pour simuler ⌘V. En attendant, le texte dicté est seulement copié.</span></div>
+        <button class="btn primary small" type="button" data-ax-prompt>Autoriser</button>
+      </div>
       <div class="hero" id="hero">
         <div class="hero-glow" aria-hidden="true"></div>
         <div class="hero-main">
@@ -212,6 +218,11 @@
         <div><h1>Paramètres</h1><p class="sub">Raccourci, transcription, apparence et moteur local.</p></div>
       </header>
 
+      <div class="banner" id="ax-banner-settings" hidden>
+        <div class="banner-icon"><svg><use href="#i-shield"/></svg></div>
+        <div><strong>Permission Accessibilité manquante</strong><span>Nécessaire pour coller automatiquement (⌘V) et pour le mode « Maintenir pour parler ».</span></div>
+        <button class="btn primary small" type="button" data-ax-prompt>Autoriser</button>
+      </div>
       <div class="group">
         <div class="group-title">Raccourci</div>
         <div class="card">
@@ -250,11 +261,11 @@
             <div class="select"><select id="set-mic"><option value="default">Micro par défaut</option></select></div>
           </div>
           <label class="row-item toggle-row">
-            <div><div class="row-title">Coller automatiquement</div><div class="row-sub">Sinon le texte est seulement copié : colle-le avec Ctrl + V.</div></div>
+            <div><div class="row-title">Coller automatiquement</div><div class="row-sub" id="autopaste-sub">Sinon le texte est seulement copié : colle-le avec Ctrl + V.</div></div>
             <span class="toggle"><input type="checkbox" id="set-autopaste"><span></span></span>
           </label>
           <label class="row-item toggle-row">
-            <div><div class="row-title">Lancer à l’ouverture de session</div><div class="row-sub">FreeFlow attend dans la zone de notification.</div></div>
+            <div><div class="row-title">Lancer à l’ouverture de session</div><div class="row-sub" id="login-sub">FreeFlow attend dans la zone de notification.</div></div>
             <span class="toggle"><input type="checkbox" id="set-login"><span></span></span>
           </label>
         </div>
@@ -264,7 +275,7 @@
         <div class="group-title">Apparence</div>
         <div class="card rows">
           <div class="row-item">
-            <div><div class="row-title">Thème</div><div class="row-sub">Suit le thème de Windows par défaut.</div></div>
+            <div><div class="row-title">Thème</div><div class="row-sub" id="theme-sub">Suit le thème de Windows par défaut.</div></div>
             <div class="segmented" id="seg-theme" data-setting="theme">
               <button type="button" data-value="system">Système</button><button type="button" data-value="light">Clair</button><button type="button" data-value="dark">Sombre</button>
             </div>

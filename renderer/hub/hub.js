@@ -4,6 +4,8 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
   const ff = window.freeflow;
+  const MAC = ff.platform === 'darwin';
+  document.documentElement.dataset.platform = ff.platform || '';
   let state = null;
   let phase = 'idle';
   let hubDictation = false;      // the current dictation targets the "try here" box
@@ -69,7 +71,7 @@
     while (fq && (j = f.indexOf(fq, i)) !== -1) { out += esc(text.slice(i, j)) + `<mark>${esc(text.slice(j, j + fq.length))}</mark>`; i = j + fq.length; }
     return out + esc(text.slice(i));
   }
-  const APP_NAMES = { chrome: 'Chrome', msedge: 'Edge', firefox: 'Firefox', code: 'VS Code', slack: 'Slack', notion: 'Notion', discord: 'Discord', outlook: 'Outlook', winword: 'Word', teams: 'Teams', 'ms-teams': 'Teams', windowsterminal: 'Terminal', explorer: 'Explorateur', notepad: 'Bloc-notes', obsidian: 'Obsidian', telegram: 'Telegram', whatsapp: 'WhatsApp', cursor: 'Cursor' };
+  const APP_NAMES = { 'google chrome': 'Chrome', chrome: 'Chrome', msedge: 'Edge', firefox: 'Firefox', code: 'VS Code', slack: 'Slack', notion: 'Notion', discord: 'Discord', outlook: 'Outlook', winword: 'Word', teams: 'Teams', 'ms-teams': 'Teams', windowsterminal: 'Terminal', explorer: 'Explorateur', notepad: 'Bloc-notes', obsidian: 'Obsidian', telegram: 'Telegram', whatsapp: 'WhatsApp', cursor: 'Cursor' };
   function appName(p) { const k = String(p || '').toLowerCase(); return APP_NAMES[k] || (p ? p.charAt(0).toUpperCase() + p.slice(1) : ''); }
 
   // ---- hero waveform (decorative; speeds up while listening)
@@ -83,15 +85,16 @@
   }
 
   // ---- render
+  function gpuName(eng) { return eng.device === 'cuda' ? 'GPU' : eng.device === 'mlx' ? 'GPU Metal' : 'CPU'; }
   function engineLabel(eng) {
     if (phase === 'listening') return { title: 'Écoute…', sub: '', cls: 'listening' };
-    if (eng.ready) return { title: `Prêt · ${eng.device === 'cuda' ? 'GPU' : 'CPU'}`, sub: `Whisper ${eng.model}`, cls: 'ready' };
+    if (eng.ready) return { title: `Prêt · ${gpuName(eng)}`, sub: `Whisper ${eng.model}`, cls: 'ready' };
     if (eng.loading) return { title: eng.phase === 'downloading' ? 'Téléchargement du modèle' : 'Chargement du modèle…', sub: eng.phase === 'downloading' ? (state.loadingShort || '').replace(/^Téléchargement · /, '') : 'quelques secondes', cls: '' };
     return { title: 'Moteur indisponible', sub: 'voir Paramètres', cls: 'error' };
   }
 
   function renderKeysInto(node, acc, cls) {
-    node.innerHTML = String(acc || '').split('+').filter(Boolean).map((k) => `<kbd>${esc(KEY_LABEL[k] || k)}</kbd>`).join('<span class="plus">+</span>');
+    node.innerHTML = String(acc || '').split('+').filter(Boolean).map((k) => `<kbd>${esc(KEY_LABEL[k] || k)}</kbd>`).join(MAC ? '' : '<span class="plus">+</span>');
     if (cls) node.className = cls;
   }
 
@@ -112,6 +115,10 @@
     $('#nav-dict-count').textContent = state.dictionary.length || '';
     $('#nav-snip-count').textContent = state.snippets.length || '';
 
+    const needAx = MAC && state.accessibility === false;
+    $('#ax-banner-home').hidden = !needAx;
+    $('#ax-banner-settings').hidden = !needAx;
+
     renderHome(s, st, eng);
     renderHistory();
     renderDictionary();
@@ -128,7 +135,7 @@
     const heroState = phase === 'listening' ? 'listening' : busy ? 'busy' : eng.ready ? 'ready' : eng.loading ? 'loading' : 'error';
     $('#hero').dataset.state = heroState;
     $('#hero-status').textContent = {
-      listening: 'J’écoute…', busy: 'Transcription en cours…', ready: `Prêt · ${eng.device === 'cuda' ? 'GPU' : 'CPU'} · ${eng.model || ''}`,
+      listening: 'J’écoute…', busy: 'Transcription en cours…', ready: `Prêt · ${gpuName(eng)} · ${eng.model || ''}`,
       loading: eng.phase === 'downloading' ? (state.loadingLabel || 'Téléchargement du modèle') : 'Chargement du modèle…', error: 'Moteur indisponible',
     }[heroState];
     renderKeysInto($('#howto-shortcut'), s.shortcut);
@@ -136,7 +143,7 @@
     $('#howto-mode').textContent = ptt ? 'maintiens et parle, relâche pour coller' : 'pour démarrer, puis à nouveau pour coller';
     $('#howto-line').textContent = s.autoPaste
       ? 'Place ton curseur n’importe où, appuie sur ton raccourci et parle. Le texte s’écrit tout seul.'
-      : 'Appuie sur ton raccourci et parle : le texte est copié, colle-le avec Ctrl + V.';
+      : `Appuie sur ton raccourci et parle : le texte est copié, colle-le avec ${MAC ? '⌘V' : 'Ctrl + V'}.`;
 
     $('#stat-today').textContent = fmtNum(st.wordsToday);
     $('#stat-total-foot').textContent = `${fmtNum(st.totalWords)} au total`;
@@ -284,7 +291,8 @@
     const pttInput = document.querySelector('input[name=mode][value=ptt]');
     pttInput.disabled = !state.pttAvailable;
     $('#mode-ptt-label').classList.toggle('disabled', !state.pttAvailable);
-    $('#ptt-hint').textContent = state.pttAvailable ? 'Garde la touche enfoncée ; un appui bref passe en mains libres.' : 'Indisponible : le module uiohook-napi n’a pas pu être chargé.';
+    $('#ptt-hint').textContent = state.pttAvailable ? 'Garde la touche enfoncée ; un appui bref passe en mains libres.'
+      : MAC && state.accessibility === false ? 'Autorise FreeFlow dans Accessibilité, puis relance-le, pour l’activer.' : 'Indisponible : le module uiohook-napi n’a pas pu être chargé.';
     for (const seg of $$('.segmented')) {
       const v = s[seg.dataset.setting] || (seg.dataset.setting === 'theme' ? 'system' : 'auto');
       seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.value === v));
@@ -296,7 +304,7 @@
     badge.className = 'engine-badge' + (eng.ready ? ' ready' : !eng.loading ? ' error' : '');
     $('#eng-state').textContent = eng.ready ? `Prêt, chargé en ${((eng.load_ms || 0) / 1000).toFixed(1).replace('.', ',')} s` : eng.loading ? (eng.phase === 'downloading' ? state.loadingLabel : 'Chargement du modèle…') : 'Moteur indisponible';
     $('#eng-error').textContent = eng.error && !eng.ready ? eng.error : eng.ready ? `${fmtNum(eng.transcriptions || 0)} transcription${(eng.transcriptions || 0) > 1 ? 's' : ''} depuis le démarrage` : '';
-    $('#eng-device').textContent = eng.device ? (eng.device === 'cuda' ? 'Carte graphique (CUDA)' : 'Processeur') : '—';
+    $('#eng-device').textContent = eng.device ? ({ cuda: 'Carte graphique (CUDA)', mlx: 'Puce Apple (Metal)' }[eng.device] || 'Processeur') : '—';
     $('#eng-model').textContent = eng.model ? `Whisper ${eng.model}` : '—';
     $('#eng-compute').textContent = eng.compute_type || '—';
     $('#eng-port').textContent = eng.port ? `127.0.0.1:${eng.port}${eng.external ? ' (externe)' : ''}` : '—';
@@ -318,6 +326,18 @@
     status.classList.toggle('live', phase === 'listening' && mine);
     btn.title = phase === 'listening' && mine ? 'Arrêter' : 'Dicter dans cette zone';
   }
+
+  // ---- per-OS wording
+  if (MAC) {
+    $('#autopaste-sub').textContent = 'Sinon le texte est seulement copié : colle-le avec ⌘V.';
+    $('#login-sub').textContent = 'FreeFlow attend dans la barre des menus.';
+    $('#theme-sub').textContent = 'Suit le thème de macOS par défaut.';
+  }
+  document.addEventListener('click', async (e) => {
+    if (!e.target.closest('[data-ax-prompt]')) return;
+    const ok = await ff.invoke('ff:accessibility-prompt');
+    if (ok) toast('Accessibilité autorisée');
+  });
 
   // ---- microphones
   async function loadMics() {
@@ -462,25 +482,29 @@
   const MOD_ORDER = ['Ctrl', 'Alt', 'Shift', 'Super'];
   const MOD_CODES = { ControlLeft: 'Ctrl', ControlRight: 'Ctrl', AltLeft: 'Alt', AltRight: 'Alt', ShiftLeft: 'Shift', ShiftRight: 'Shift', MetaLeft: 'Super', MetaRight: 'Super', OSLeft: 'Super', OSRight: 'Super' };
   const MOD_FLAG = { Ctrl: 'ctrlKey', Alt: 'altKey', Shift: 'shiftKey', Super: 'metaKey' };
-  const KEY_LABEL = { Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Maj', Super: 'Win', Space: 'Espace', Enter: 'Entrée', Backspace: 'Retour', Delete: 'Suppr', Insert: 'Inser', Up: '↑', Down: '↓', Left: '←', Right: '→', Capslock: 'Verr. Maj' };
+  const KEY_LABEL = MAC
+    ? { Ctrl: '⌃', Alt: '⌥', Shift: '⇧', Super: '⌘', Space: 'Espace', Enter: '↩', Backspace: '⌫', Delete: '⌦', Tab: '⇥', Up: '↑', Down: '↓', Left: '←', Right: '→', Capslock: '⇪' }
+    : { Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Maj', Super: 'Win', Space: 'Espace', Enter: 'Entrée', Backspace: 'Retour', Delete: 'Suppr', Insert: 'Inser', Up: '↑', Down: '↓', Left: '←', Right: '→', Capslock: 'Verr. Maj' };
+  const MODS_TEXT = MAC ? '⌃, ⌥, ⇧ ou ⌘' : 'Ctrl, Alt, Maj ou Win';
+  const MOD_EXAMPLE = MAC ? '⌃ + ⌘' : 'Ctrl + Win';
   const sc = { recording: false, held: new Set(), mods: new Set(), key: null, pending: null, error: null };
 
-  function prettyAcc(acc) { return String(acc || '').split('+').filter(Boolean).map((k) => KEY_LABEL[k] || k).join(' + '); }
+  function prettyAcc(acc) { return String(acc || '').split('+').filter(Boolean).map((k) => KEY_LABEL[k] || k).join(MAC ? '' : ' + '); }
   function accFrom(mods, key) { return [...MOD_ORDER.filter((m) => mods.has(m)), ...(key ? [key] : [])].join('+'); }
   function localCheck(acc) {
     const parts = String(acc || '').split('+').filter(Boolean);
     const mods = parts.filter((p) => MOD_ORDER.includes(p));
     const key = parts.find((p) => !MOD_ORDER.includes(p));
     if (!parts.length) return 'Appuie sur au moins une combinaison.';
-    if (!key) return mods.length >= 2 ? null : 'Avec seulement des touches de modification, il en faut au moins deux (ex. Ctrl + Win).';
-    if (!mods.length && !/^F\d{1,2}$/.test(key)) return 'Ajoute Ctrl, Alt, Maj ou Win (ou utilise une touche F1 à F12).';
+    if (!key) return mods.length >= 2 ? null : `Avec seulement des touches de modification, il en faut au moins deux (ex. ${MOD_EXAMPLE}).`;
+    if (!mods.length && !/^F\d{1,2}$/.test(key)) return `Ajoute ${MODS_TEXT} (ou utilise une touche F1 à F12).`;
     return null;
   }
   function renderKeys(acc, cls, placeholder) {
     const box = $('#shortcut-keys');
     box.className = 'shortcut-keys' + (cls ? ' ' + cls : '');
     if (!acc) { box.innerHTML = `<span class="placeholder">${esc(placeholder || '—')}</span>`; return; }
-    box.innerHTML = acc.split('+').map((k) => `<kbd>${esc(KEY_LABEL[k] || k)}</kbd>`).join('<span class="plus">+</span>');
+    box.innerHTML = acc.split('+').map((k) => `<kbd>${esc(KEY_LABEL[k] || k)}</kbd>`).join(MAC ? '' : '<span class="plus">+</span>');
   }
   function updateShortcutUi() {
     if (!state) return;

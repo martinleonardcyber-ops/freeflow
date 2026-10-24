@@ -2,7 +2,7 @@
 // FreeFlow main process: tray, global shortcut, overlay pill, hub window,
 // dictation pipeline (overlay mic -> WAV -> local STT sidecar -> formatting ->
 // clipboard + simulated paste -> history).
-const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, clipboard, screen, nativeImage, nativeTheme, shell, session } = require('electron');
+const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, clipboard, screen, nativeImage, nativeTheme, shell, session, systemPreferences, ClipboardItem } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -19,6 +19,8 @@ app.setName('FreeFlow');
 app.setAppUserModelId('com.alan.freeflow');
 
 const ROOT = __dirname;
+const IS_MAC = process.platform === 'darwin';
+const IS_WIN = process.platform === 'win32';
 const ASSETS = path.join(ROOT, 'assets');
 const DEFAULT_SETTINGS = {
   shortcut: 'Ctrl+Alt+Space',
@@ -29,7 +31,7 @@ const DEFAULT_SETTINGS = {
   microphoneId: 'default',
   pasteDelayMs: 60,
   restoreClipboardMs: 400,
-  modelCache: '',               // empty = %LOCALAPPDATA%\FreeFlow\models (filled in at first start)
+  modelCache: '',               // empty = %LOCALAPPDATA%\FreeFlow\models, or <userData>/models on macOS (filled in at first start)
   sidecarPort: 48123,
   maxDictationSec: 300,
   showHubAtStart: true,
@@ -167,6 +169,8 @@ function buildState() {
     phase: dictation.phase,
     paths: { userData, logs: logDir, pasteHelper: pasteHelperPath() },
     platform: process.platform,
+    // macOS: posting Cmd+V and the low-level keyboard hook both need the Accessibility permission.
+    accessibility: IS_MAC ? systemPreferences.isTrustedAccessibilityClient(false) : true,
   };
 }
 
@@ -176,9 +180,10 @@ function pushState() {
 
 // ---- Paths -----------------------------------------------------------------
 function pasteHelperPath() {
+  const name = IS_MAC ? 'PasteHelperMac' : 'PasteHelper.exe';
   const candidates = [
-    path.join(process.resourcesPath || '', 'PasteHelper.exe'),
-    path.join(ROOT, 'native', 'PasteHelper.exe'),
+    path.join(process.resourcesPath || '', name),
+    path.join(ROOT, 'native', name),
   ];
   return candidates.find((p) => p && fs.existsSync(p)) || candidates[1];
 }
@@ -188,22 +193,29 @@ function createHub() {
   hub = new BrowserWindow({
     width: 1100, height: 720, minWidth: 900, minHeight: 600,
     title: 'FreeFlow',
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0c0c10' : '#f6f5f2',
-    icon: path.join(ASSETS, 'icon.ico'),
+    backgroundColor: IS_MAC ? '#00000000' : nativeTheme.shouldUseDarkColors ? '#0c0c10' : '#f6f5f2',
+    icon: path.join(ASSETS, IS_WIN ? 'icon.ico' : 'icon.png'),
     autoHideMenuBar: true,
     show: false,
+    // macOS: traffic lights over a translucent sidebar, like native Mac apps.
+    ...(IS_MAC ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 20, y: 20 }, vibrancy: 'sidebar', visualEffectState: 'active' } : {}),
     webPreferences: { preload: path.join(ROOT, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   hub.loadFile(path.join(ROOT, 'renderer', 'hub', 'index.html'));
   hub.on('page-title-updated', (e) => e.preventDefault());
   hub.on('close', (e) => { if (!quitting) { e.preventDefault(); hub.hide(); } });
-  hub.on('hide', () => { if (shortcutSuspended) { shortcutSuspended = false; registerShortcut(); pushState(); } });
+  hub.on('hide', () => {
+    if (shortcutSuspended) { shortcutSuspended = false; registerShortcut(); pushState(); }
+    if (IS_MAC && app.dock) app.dock.hide();   // menu-bar app: a Dock icon only while the window is open
+  });
+  hub.on('focus', pushState);                  // e.g. the Accessibility permission was just granted
   hub.webContents.on('did-finish-load', pushState);
   hub.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
 }
 
 function showHub() {
   if (!hub || hub.isDestroyed()) createHub();
+  if (IS_MAC && app.dock) app.dock.show();
   if (!hub.isVisible()) hub.show();
   hub.focus();
   pushState();
@@ -214,6 +226,7 @@ function createOverlay() {
     width: OVERLAY_W, height: OVERLAY_H, show: false,
     frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
     alwaysOnTop: true, skipTaskbar: true, focusable: false, resizable: false, movable: false,
+    ...(IS_MAC ? { type: 'panel' } : {}),   // NSPanel: never activates FreeFlow, so Cmd+V lands in the app the user is in
     minimizable: false, maximizable: false, fullscreenable: false,
     webPreferences: { preload: path.join(ROOT, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
@@ -247,18 +260,26 @@ function showOverlay() {
 
 // ---- Tray ------------------------------------------------------------------
 function trayIcon(name) {
+  // macOS menu bar: template images (tinted by the system) and @2x variants.
+  if (IS_MAC) name = { 'tray.png': 'trayTemplate.png', 'tray-loading.png': 'tray-loadingTemplate.png', 'tray-rec.png': 'tray-rec-mac.png' }[name] || name;
   return nativeImage.createFromPath(path.join(ASSETS, name));
 }
 
 function createTray() {
   tray = new Tray(trayIcon('tray-loading.png'));
   tray.setToolTip('FreeFlow — Chargement du modèle…');
-  tray.on('click', showHub);
-  tray.on('double-click', showHub);
+  if (!IS_MAC) {                 // macOS: a click opens the menu, like every menu-bar item
+    tray.on('click', showHub);
+    tray.on('double-click', showHub);
+  }
   updateTray();
 }
 
 function prettyShortcut(acc) {
+  if (IS_MAC) {
+    const mac = { Ctrl: '⌃', Alt: '⌥', Shift: '⇧', Super: '⌘', Space: 'Espace' };
+    return String(acc || '').split('+').map((k) => mac[k] || k).join('');
+  }
   const names = { Super: 'Win', Space: 'Espace', Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Maj' };
   return String(acc || '').split('+').map((k) => names[k] || k).join(' + ');
 }
@@ -281,8 +302,9 @@ function updateTray() {
   const busy = dictation.phase === 'transcribing' || dictation.phase === 'formatting';
   const info = sidecar ? sidecar.info : {};
   tray.setImage(trayIcon(listening ? 'tray-rec.png' : info.ready ? 'tray.png' : 'tray-loading.png'));
-  const engine = info.ready ? `${info.device === 'cuda' ? 'GPU' : 'CPU'} · ${info.model}` : info.loading ? loadingLabel(info) : (info.error ? 'Moteur indisponible' : '…');
+  const engine = info.ready ? `${info.device === 'cuda' ? 'GPU' : info.device === 'mlx' ? 'GPU Metal' : 'CPU'} · ${info.model}` : info.loading ? loadingLabel(info) : (info.error ? 'Moteur indisponible' : '…');
   tray.setToolTip(`FreeFlow — ${listening ? 'Écoute…' : busy ? 'Transcription…' : engine}\nRaccourci : ${prettyShortcut(s.shortcut)}`);
+  if (IS_MAC) tray.setTitle(listening ? ' Écoute' : '');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Ouvrir FreeFlow', click: showHub },
     { label: listening ? 'Arrêter la dictée (mains libres)' : 'Démarrer la dictée (mains libres)', enabled: !!info.ready && !busy, click: () => toggleDictation() },
@@ -390,27 +412,30 @@ ipcMain.on('ff:audio-error', (_e, message) => {
   scheduleIdle(2000);
 });
 
+// Electron >= 44 clipboard API (W3C-like): read() -> ClipboardItem[], write(ClipboardItem[]).
+// Every MIME type is materialised into a Blob now, because the items returned by
+// read() may resolve lazily against a clipboard we are about to overwrite.
 async function saveClipboard() {
-  const snap = {};
   try {
-    const formats = await clipboard.availableFormats();
-    if (formats.some((f) => f.startsWith('text/plain'))) snap.text = await clipboard.readText();
-    if (formats.includes('text/html')) snap.html = await clipboard.readHTML();
-    if (formats.includes('text/rtf')) snap.rtf = await clipboard.readRTF();
-    if (formats.some((f) => f.startsWith('image/'))) {
-      const img = await clipboard.readImage();
-      if (img && !img.isEmpty()) snap.image = img;
+    const items = await clipboard.read();
+    const snap = [];
+    for (const item of items) {
+      const data = {};
+      for (const type of item.types) {
+        try { data[type] = await item.getType(type); } catch (e) { log(`clipboard save ${type}:`, e.message); }
+      }
+      if (Object.keys(data).length) snap.push(data);
     }
+    return snap;
   } catch (e) {
     log('clipboard save:', e.message);
-    try { snap.text = await clipboard.readText(); } catch { /* ignore */ }
+    try { return [{ 'text/plain': await clipboard.readText() }]; } catch { return []; }
   }
-  return snap;
 }
 
 async function restoreClipboard(snap) {
-  if (!snap || !Object.keys(snap).length) { await clipboard.clear(); return; }
-  await clipboard.write(snap);
+  if (!snap || !snap.length) { clipboard.clear(); return; }
+  await clipboard.write(snap.map((data) => new ClipboardItem(data)));
 }
 
 /**
@@ -466,7 +491,10 @@ async function runPipeline(wav, opts = {}) {
     log(`dictation: ${entry.words} words, stt ${entry.sttMs} ms, latency ${latencyMs} ms, paste=${entry.pasted}`);
     setPhase('done', { text, latencyMs, pasted: entry.pasted });
     scheduleIdle(pasteOutcome && pasteOutcome.outcome === 'blocked' ? 2200 : 900);
-    if (pasteOutcome && pasteOutcome.outcome === 'blocked') setPhase('error', { message: 'Collage bloqué — texte copié dans le presse-papiers' });
+    if (pasteOutcome && pasteOutcome.outcome === 'blocked') {
+      setPhase('error', { message: pasteOutcome.reason === 'accessibility' ? 'Autorise FreeFlow dans Accessibilité · texte copié' : 'Collage bloqué — texte copié dans le presse-papiers' });
+      if (pasteOutcome.reason === 'accessibility') pushState();
+    }
     pushState();
     return entry;
   } catch (err) {
@@ -538,6 +566,7 @@ function foreignKeyHeld() {
 }
 
 function maskWinKey() {
+  if (!IS_WIN) return;            // the Start-menu problem does not exist elsewhere
   execFile(pasteHelperPath(), ['--mask'], { windowsHide: true, timeout: 3000 }, () => {});
 }
 
@@ -643,10 +672,10 @@ ipcMain.handle('ff:shortcut-test', (_e, acc) => {
   const nMods = [c.ctrl, c.alt, c.shift, c.meta].filter(Boolean).length;
   if (!c.key) {
     if (!pttAvailable) return { ok: false, error: 'Les raccourcis sans touche normale demandent le module uiohook-napi.' };
-    if (nMods < 2) return { ok: false, error: 'Avec seulement des touches de modification, il en faut au moins deux (ex. Ctrl + Win).' };
+    if (nMods < 2) return { ok: false, error: `Avec seulement des touches de modification, il en faut au moins deux (ex. ${IS_MAC ? '⌃ + ⌘' : 'Ctrl + Win'}).` };
     return { ok: true };
   }
-  if (!nMods && !/^F\d{1,2}$/i.test(c.key)) return { ok: false, error: 'Ajoute au moins une touche de modification (Ctrl, Alt, Maj, Win), ou utilise une touche F1 à F12.' };
+  if (!nMods && !/^F\d{1,2}$/i.test(c.key)) return { ok: false, error: `Ajoute au moins une touche de modification (${IS_MAC ? '⌃, ⌥, ⇧, ⌘' : 'Ctrl, Alt, Maj, Win'}), ou utilise une touche F1 à F12.` };
   if (settings.get().mode === 'ptt' && pttAvailable) {
     return uiohookKeycode(c.key) != null ? { ok: true } : { ok: false, error: `La touche « ${c.key} » n’est pas reconnue en mode maintenu.` };
   }
@@ -718,6 +747,14 @@ ipcMain.handle('ff:dictation-toggle', (_e, opts) => { toggleDictation(opts || {}
 ipcMain.handle('ff:dictation-cancel', () => { cancelDictation(); return dictation.phase; });
 ipcMain.handle('ff:copy', async (_e, text) => { await clipboard.writeText(String(text || '')); return true; });
 ipcMain.handle('ff:open-logs', () => shell.openPath(logDir));
+// macOS: ask for the Accessibility permission (system dialog) and open the right settings pane.
+ipcMain.handle('ff:accessibility-prompt', async () => {
+  if (!IS_MAC) return true;
+  const ok = systemPreferences.isTrustedAccessibilityClient(true);
+  if (!ok) await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+  pushState();
+  return ok;
+});
 ipcMain.handle('ff:open-path', (_e, p) => shell.openPath(p));
 
 // Dev / verification commands: run the pipeline on a WAV file with paste forced off.
@@ -875,7 +912,13 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === 'media' || permission === 'audioCapture'));
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media' || permission === 'audioCapture');
 
+  if (IS_MAC) {
+    // The first getUserMedia would ask anyway; asking up front avoids losing the first dictation to the dialog.
+    try { if (systemPreferences.getMediaAccessStatus('microphone') !== 'granted') log('microphone access:', await systemPreferences.askForMediaAccess('microphone')); } catch (e) { log('microphone access:', e.message); }
+  }
   try { uiohookMod = require('uiohook-napi'); pttAvailable = !!(uiohookMod && uiohookMod.uIOhook); } catch (e) { pttAvailable = false; log('uiohook-napi unavailable:', e.message); }
+  // macOS: the keyboard hook needs the Accessibility permission; without it, push-to-talk stays off.
+  if (IS_MAC && pttAvailable && !systemPreferences.isTrustedAccessibilityClient(false)) { pttAvailable = false; log('uiohook: waiting for the Accessibility permission'); }
 
   const s = settings.get();
   sidecar = new Sidecar({ port: s.sidecarPort, hfHome: s.modelCache, log, appPath: ROOT, resourcesPath: process.resourcesPath, isPackaged: app.isPackaged, token: sidecarToken() });
@@ -890,6 +933,7 @@ app.whenReady().then(async () => {
   registerShortcut();
   screen.on('display-metrics-changed', positionOverlay);
   if (s.showHubAtStart || DEV_MODE) showHub();
+  else if (IS_MAC && app.dock) app.dock.hide();
   if (process.env.FREEFLOW_NO_SIDECAR) {
     // UI-only development: skip the engine entirely.
     sidecar.info = { ...sidecar.info, loading: false, error: 'Moteur désactivé (FREEFLOW_NO_SIDECAR)' };

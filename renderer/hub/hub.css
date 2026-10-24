@@ -528,6 +528,30 @@ nav { display: flex; flex-direction: column; gap: 2px; }
 .engine-grid .v.mono { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: 12px; font-weight: 500; }
 .version { color: var(--muted); font-size: 12px; text-align: center; margin: 26px 0 0; }
 
+/* ---------- Permission banner (macOS Accessibility) */
+.banner {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 16px; padding: 14px 16px; border-radius: var(--r);
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  animation: enter 300ms var(--ease);
+}
+.banner > div:nth-child(2) { flex: 1; display: grid; gap: 2px; }
+.banner strong { font-size: 13.5px; }
+.banner span { font-size: 12.5px; color: var(--muted); }
+.banner-icon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); flex: none; }
+.banner-icon svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- macOS: translucent sidebar under the traffic lights */
+.titlebar-drag { display: none; }
+:root[data-platform="darwin"] body { background: transparent; }
+:root[data-platform="darwin"] .sidebar { padding-top: 50px; -webkit-app-region: drag; }
+:root[data-platform="darwin"] .sidebar button, :root[data-platform="darwin"] .sidebar .engine, :root[data-platform="darwin"] .sidebar .side-shortcut { -webkit-app-region: no-drag; }
+:root[data-platform="darwin"] .titlebar-drag { display: block; position: fixed; top: 0; left: 238px; right: 0; height: 10px; -webkit-app-region: drag; z-index: 5; }
+:root[data-platform="darwin"] .nav-item:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+:root[data-platform="darwin"] .keys kbd { font-size: 13px; min-width: 24px; text-align: center; }
+:root[data-platform="darwin"] .keys.lg kbd { min-width: 44px; }
+:root[data-platform="darwin"] .shortcut-keys kbd { min-width: 44px; text-align: center; }
+@media (max-width: 980px) { :root[data-platform="darwin"] .titlebar-drag { left: 210px; } }
+
 /* ---------- Toast */
 .toast {
   position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 16px) scale(0.96);

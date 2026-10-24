@@ -6,6 +6,7 @@ const ALLOWED_SEND = new Set(['ff:audio-done', 'ff:audio-error', 'ff:overlay-rea
 const ALLOWED_ON = new Set(['ff:state', 'ff:dictation', 'ff:insert', 'ff:overlay', 'ff:rec-start', 'ff:rec-stop', 'ff:rec-cancel', 'ff:navigate']);
 
 contextBridge.exposeInMainWorld('freeflow', {
+  platform: process.platform,   // known before the first state push: the hub lays itself out per OS
   invoke: (channel, ...args) => {
     if (typeof channel !== 'string' || !channel.startsWith('ff:')) return Promise.reject(new Error('bad channel'));
     return ipcRenderer.invoke(channel, ...args);

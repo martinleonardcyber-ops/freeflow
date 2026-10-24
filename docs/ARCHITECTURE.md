@@ -81,7 +81,8 @@ Variables d'environnement reconnues par `stt_server.py` :
 | `FREEFLOW_PORT` | port local | `48123` |
 | `FREEFLOW_MODEL` | modèle sur GPU | `large-v3` |
 | `FREEFLOW_CPU_MODEL` | modèle sur processeur | `small` |
-| `FREEFLOW_DEVICE` | forcer `cuda` ou `cpu` | essai GPU puis CPU |
+| `FREEFLOW_DEVICE` | forcer `mlx`, `cuda` ou `cpu` | MLX sur Mac Apple Silicon, sinon essai GPU puis CPU |
+| `FREEFLOW_MLX_MODEL` | modèle MLX sur Mac | `mlx-community/whisper-large-v3-turbo` |
 | `FREEFLOW_TOKEN` | secret exigé (en-tête `X-FreeFlow-Token`) sur `POST /transcribe` et `/shutdown` | fourni par l'application (`%APPDATA%\FreeFlow\engine.token`) ; vide = pas de contrôle |
 | `HF_HOME` | cache des modèles | fourni par l'application |
 
@@ -119,4 +120,15 @@ python -m http.server 3300
 - Le collage simulé est refusé par les fenêtres lancées en administrateur : le texte reste dans le presse-papiers.
 - En mode « maintenir pour parler », la touche passe aussi à l'application en dessous (hook clavier global) : choisis une combinaison libre.
 - La mise en forme suit des règles fixes, sans IA générative : pas de reformulation.
-- Windows uniquement.
+## macOS
+
+| Windows | macOS |
+|---|---|
+| faster-whisper sur CUDA | MLX Whisper sur Metal (`MlxModel` dans `stt_server.py`), précédé de la détection de voix Silero de faster-whisper : sans voix, le modèle n'est pas appelé (pas d'« Amara.org » inventé sur un silence) |
+| `PasteHelper.exe` (SendInput, Ctrl+V) | `PasteHelperMac` (CGEvent, ⌘V) ; renvoie `blocked` + `reason: accessibility` sans la permission Accessibilité |
+| zone de notification | barre des menus (icônes *template* `trayTemplate.png`, `assets/make_tray_mac.py`), Dock masqué quand la fenêtre est fermée |
+| fenêtre classique | `titleBarStyle: hiddenInset` + `vibrancy: sidebar` ; le hub lit `window.freeflow.platform` pour ses libellés (⌃⌥⇧⌘) |
+| pastille | `type: panel` : elle n'active jamais FreeFlow, donc ⌘V arrive dans l'app de l'utilisateur |
+
+- `PasteHelperMac` attend un peu après avoir posté ⌘V : macOS jette les événements d'un processus qui se termine aussitôt.
+- Le mode « Maintenir pour parler » (uiohook) ne démarre qu'avec la permission Accessibilité.
