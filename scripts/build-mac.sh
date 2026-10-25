@@ -56,7 +56,7 @@ npx --no-install @electron/packager . OxoFlow --platform=darwin --arch=arm64 --o
   --icon="$BUILD/OxoFlow.icns" --app-bundle-id=com.oxoria.oxoflow --extend-info="$BUILD/extra-info.plist" \
   --extra-resource=native/PasteHelperMac --extra-resource=native/FnKeyMac --extra-resource="$BUILD/engine" \
   --ignore='^/stt($|/)' --ignore='^/native/.*\.(swift|cs)$' --ignore='^/native/(PasteHelperMac|FnKeyMac)$' \
-  --ignore='^/build($|/)' --ignore='^/release($|/)' --ignore='^/dist($|/)' --ignore='^/dev($|/)' --ignore='^/docs($|/)' \
+  --ignore='^/build($|/)' --ignore='^/release($|/)' --ignore='^/dist($|/)' --ignore='^/dev($|/)' --ignore='^/test($|/)' --ignore='^/\.github($|/)' --ignore='^/docs($|/)' \
   --ignore='^/installer($|/)' --ignore='^/scripts($|/)' --ignore='^/screenshots($|/)' --ignore='^/\.git' \
   --ignore='^/assets/make_.*\.py$' --ignore='^/README\.md$' >/dev/null
 APP="$ROOT/release/OxoFlow-darwin-arm64/OxoFlow.app"

@@ -152,6 +152,7 @@
     renderSnippets();
     renderSettings(s, st, eng);
     renderTry();
+    renderOnboarding();
   }
 
   // First-run checklist: only what is really missing, read from the system each time.
@@ -732,7 +733,7 @@
     render();
   });
   ff.on('ff:insert', (text) => {
-    const ta = $('#try-area');
+    const ta = ob.open && ob.steps[ob.i] === 'try' ? $('#ob-try') : $('#try-area');
     const start = ta.selectionStart ?? ta.value.length, end = ta.selectionEnd ?? ta.value.length;
     const before = ta.value.slice(0, start), after = ta.value.slice(end);
     const sep = before && !/\s$/.test(before) ? ' ' : '';
@@ -782,7 +783,105 @@
   // Relative times ("il y a 3 min") stay fresh.
   setInterval(() => { if (state) { drawn.recent = null; render(); } }, 60000);
 
+  // ---- first-run assistant
+  // Steps depend on the OS; each "check" reads the real system state pushed by main,
+  // so a step ticks itself (and moves on) as soon as macOS confirms it.
+  const ob = { open: false, i: 0, steps: [], advanced: new Set(), tried: false };
+  const OB = {
+    welcome: { label: 'Bienvenue', manual: true },
+    mic: { label: 'Micro', check: () => state.microphone === 'granted' },
+    ax: { label: 'Collage', check: () => !!state.accessibility },
+    fn: { label: 'Touche fn', check: () => state.fnUsage === 0 && !state.fnDenied },
+    shortcut: { label: 'Raccourci', manual: true },
+    model: { label: 'Modèle', check: () => !!(state.sidecar && state.sidecar.ready) },
+    try: { label: 'Essai', check: () => ob.tried },
+    done: { label: 'C’est prêt', manual: true },
+  };
+  const obWave = document.querySelector('.ob-wave');
+  for (let i = 0; i < 24; i++) {
+    const sp = document.createElement('span');
+    sp.style.setProperty('--amp', (1.6 + (1 - Math.abs(i - 11.5) / 12) * 3.6).toFixed(2));
+    sp.style.animationDelay = `${(-Math.random() * 2.6).toFixed(2)}s`;
+    obWave.appendChild(sp);
+  }
+  function obStepsFor() {
+    if (!MAC) return ['welcome', 'shortcut', 'model', 'try', 'done'];
+    return ['welcome', 'mic', 'ax', state.settings.shortcut === 'Fn' ? 'fn' : 'shortcut', 'model', 'try', 'done'];
+  }
+  function openOnboarding() {
+    ob.open = true; ob.i = 0; ob.advanced.clear(); ob.tried = false;
+    $('#ob-try').value = '';
+    ob.steps = obStepsFor();
+    $('#onboard').hidden = false;
+    renderOnboarding();
+  }
+  async function closeOnboarding() {
+    ob.open = false;
+    $('#onboard').hidden = true;
+    await ff.invoke('ff:set-settings', { onboarded: true });
+  }
+  function obGo(i) {
+    ob.i = Math.max(0, Math.min(ob.steps.length - 1, i));
+    renderOnboarding();
+    if (ob.steps[ob.i] === 'try') setTimeout(() => $('#ob-try').focus(), 350);
+  }
+  function setStatus(id, ok, okText, waitText, bad) {
+    const n = $(id);
+    n.className = 'ob-status' + (ok ? ' ok' : bad ? ' bad' : '');
+    n.textContent = ok ? okText : waitText;
+  }
+  function renderOnboarding() {
+    if (!ob.open || !state) return;
+    const cur = ob.steps[ob.i];
+    $('#ob-steps').innerHTML = ob.steps.map((k, i) => {
+      const done = OB[k].check ? OB[k].check() : i < ob.i;
+      return `<li class="${i === ob.i ? 'current' : ''} ${done && k !== 'done' ? 'ok' : ''}"><span class="d">${done && k !== 'done' ? '✓' : i + 1}</span>${esc(OB[k].label)}</li>`;
+    }).join('');
+    $$('.ob-pane').forEach((p) => p.classList.toggle('show', p.dataset.step === cur));
+    $('#ob-skip').hidden = OB[cur].manual;
+    const mic = state.microphone || 'granted';
+    setStatus('#ob-mic-status', mic === 'granted', 'Micro autorisé', mic === 'denied' ? 'Refusé : réactive-le dans les réglages' : 'En attente de ton accord…', mic === 'denied');
+    $('#ob-mic-btn').textContent = mic === 'denied' ? 'Ouvrir les réglages' : 'Autoriser le micro';
+    setStatus('#ob-ax-status', !!state.accessibility, 'OxoFlow peut écrire à ta place', 'En attente : active OxoFlow dans la liste');
+    setStatus('#ob-fn-status', state.fnUsage === 0 && !state.fnDenied, 'La touche fn est à OxoFlow',
+      state.fnDenied ? 'Active aussi OxoFlow dans « Surveillance de l’entrée »' : 'En attente : « Ne rien faire »', false);
+    $('#ob-input-btn').hidden = !state.fnDenied;
+    renderKeysInto($('#ob-shortcut'), state.settings.shortcut);
+    const eng = state.sidecar || {}, dl = eng.download;
+    const pct = eng.ready ? 100 : dl && dl.total ? Math.min(99, (100 * (dl.done || 0)) / dl.total) : eng.loading ? 8 : 0;
+    $('#ob-model-fill').style.width = `${pct.toFixed(0)}%`;
+    setStatus('#ob-model-status', !!eng.ready, `Prêt · ${gpuName(eng)} · ${eng.model || ''}`,
+      eng.phase === 'downloading' ? (state.loadingLabel || 'Téléchargement…') : eng.loading ? 'Chargement du modèle…' : (eng.error || 'Moteur indisponible'), !eng.loading && !eng.ready);
+    const key = state.settings.shortcut === 'Fn' ? 'fn' : prettyAcc(state.settings.shortcut);
+    $('#ob-try-hint').innerHTML = `Le curseur est dans la zone ci-dessous. ${state.settings.mode === 'ptt' ? 'Maintiens' : 'Appuie sur'} <b>${esc(key)}</b>, dis « Bonjour, ceci est mon premier essai »${state.settings.mode === 'ptt' ? ', puis relâche' : ', puis appuie à nouveau'}.`;
+    setStatus('#ob-try-status', ob.tried, 'Parfait, ça marche !', phase === 'listening' ? 'Je t’écoute…' : phase === 'transcribing' || phase === 'formatting' ? 'Transcription…' : 'À toi de parler');
+    $('#ob-tips').innerHTML = [
+      `<li><kbd>${esc(key)}</kbd><span>${state.settings.mode === 'ptt' ? 'maintiens pour dicter, relâche pour coller' : 'appuie pour dicter, appuie à nouveau pour coller'}.</span></li>`,
+      state.settings.mode === 'ptt' ? `<li><kbd>${esc(key)} ${esc(key)}</kbd><span>deux appuis rapides : mains libres, un appui pour finir.</span></li>` : '',
+      `<li><kbd>Échap</kbd><span>annule une dictée en cours.</span></li>`,
+      `<li><kbd>${MAC ? '⌃⌘V' : 'Ctrl+Alt+Maj+V'}</kbd><span>recolle ta dernière dictée.</span></li>`,
+      '<li><span>La petite barre en bas de l’écran : survole-la pour le rappel, clique pour dicter.</span></li>',
+    ].join('');
+    // auto-advance once a checked step is confirmed
+    const c = OB[cur].check;
+    if (c && c() && !ob.advanced.has(cur)) {
+      ob.advanced.add(cur);
+      setTimeout(() => { if (ob.open && ob.steps[ob.i] === cur) obGo(ob.i + 1); }, cur === 'try' ? 1600 : 900);
+    }
+  }
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-ob-next]')) obGo(ob.i + 1); });
+  $('#ob-skip').addEventListener('click', () => obGo(ob.i + 1));
+  $('#ob-finish').addEventListener('click', closeOnboarding);
+  $('#ob-mic-btn').addEventListener('click', () => ff.invoke('ff:mic-prompt'));
+  $('#ob-fn-btn').addEventListener('click', () => ff.invoke('ff:open-keyboard-settings'));
+  $('#ob-input-btn').addEventListener('click', () => ff.invoke('ff:open-input-monitoring'));
+  $('#open-onboard').addEventListener('click', openOnboarding);
+  $('#ob-try').addEventListener('input', () => { if ($('#ob-try').value.trim().length > 3 && !ob.tried) { ob.tried = true; renderOnboarding(); } });
+
   // ---- init
-  ff.invoke('ff:get-state').then((s) => { state = s; phase = s.phase; render(); loadMics(); });
+  ff.invoke('ff:get-state').then((s) => {
+    state = s; phase = s.phase; render(); loadMics();
+    if (!s.settings.onboarded && !s.history.length && !s.devMode) openOnboarding();   // first launch only
+  });
   ff.send('ff:hub-ready');
 })();

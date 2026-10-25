@@ -44,6 +44,22 @@ jobs:
       - run: node node_modules/electron/install.js
       - run: npm run build:native
       - run: npm run release
+      # First real run of the Windows app: transcribe a French recording on the CPU
+      # (the runner has no NVIDIA GPU, so this also exercises the fallback model).
+      - name: Smoke test (real transcription)
+        shell: pwsh
+        env:
+          FREEFLOW_DEVICE: cpu
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter OxoFlow.exe release | Where-Object { $_.FullName -notmatch 'installer' } | Select-Object -First 1
+          $wav = Join-Path $PWD 'test/fixtures/bonjour-fr.wav'
+          $p = Start-Process -FilePath $exe.FullName -ArgumentList "--user-data-dir=$PWD/ci-profile", "--test-pipeline=$wav", '--exit' -PassThru
+          if (-not $p.WaitForExit(900000)) { $p.Kill(); throw 'timeout' }
+          $log = Get-Content "ci-profile/logs/oxoflow.log"
+          $log | Select-Object -Last 25
+          $hit = $log | Select-String 'TEST_PIPELINE_RESULT'
+          if (-not $hit) { throw 'the Windows app did not transcribe the test recording' }
+          if ($hit -notmatch 'teste la dict') { throw 'unexpected transcription' }
       - uses: actions/upload-artifact@v4
         with:
           name: windows

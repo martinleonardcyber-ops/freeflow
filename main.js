@@ -40,6 +40,7 @@ const DEFAULT_SETTINGS = {
   showHubAtStart: true,
   theme: 'system',              // 'system' | 'light' | 'dark'
   sounds: true,                 // short cues when listening starts / stops
+  onboarded: false,             // the first-run assistant has been completed or dismissed
   flowBar: true,                // small pill always visible at the bottom of the screen
   aiFormat: false,              // clean-up by a LOCAL language model (LM Studio...), rules as fallback
   aiModel: '',                  // '' = pick one automatically
@@ -135,6 +136,8 @@ function initStores() {
   dictionary.set(vocab);
   snippets = createStore(path.join(userData, 'snippets.json'), []);
   history = createStore(path.join(userData, 'history.json'), []);
+  // Someone who already dictates does not need the first-run assistant.
+  if (!settings.get().onboarded && history.get().length) settings.update({ onboarded: true });
 }
 
 // Shared secret between the app and its STT engine, stable per install so a
@@ -211,6 +214,7 @@ function buildState() {
     phase: dictation.phase,
     paths: { userData, logs: logDir, pasteHelper: pasteHelperPath() },
     platform: process.platform,
+    devMode: DEV_MODE,
     // macOS: posting Cmd+V and the low-level keyboard hook both need the Accessibility permission.
     accessibility: IS_MAC ? systemPreferences.isTrustedAccessibilityClient(false) : true,
     microphone: IS_MAC ? systemPreferences.getMediaAccessStatus('microphone') : 'granted',
@@ -1145,8 +1149,12 @@ async function takeScreenshot(which, out) {
     // capturePage cannot see macOS vibrancy: give the sidebar an opaque background in captures.
     hub.webContents.executeJavaScript(`document.documentElement.dataset.capture = '1'`).catch(() => {});
     const [section, scroll] = (which.split(':')[1] || '').split('@');
-    if (section) hub.webContents.send('ff:navigate', section);
-    if (scroll) setTimeout(() => hub.webContents.executeJavaScript(`document.querySelector('#content').scrollTop = ${Number(scroll) || 0}`), 400);
+    if (section === 'onboard') {
+      // "hub:onboard@2" = the first-run assistant, two steps in
+      setTimeout(() => hub.webContents.executeJavaScript(`document.querySelector('#open-onboard').click();
+        for (let i = 0; i < ${Number(scroll) || 0}; i++) (document.querySelector('.ob-pane.show [data-ob-next]') || document.querySelector('#ob-skip')).click();`), 200);
+    } else if (section) hub.webContents.send('ff:navigate', section);
+    if (scroll && section !== 'onboard') setTimeout(() => hub.webContents.executeJavaScript(`document.querySelector('#content').scrollTop = ${Number(scroll) || 0}`), 400);
   }
   else {
     showOverlay();
@@ -1175,15 +1183,18 @@ async function runDevCommands() {
     if (argv['test-pipeline']) {
       const ok = await waitReady(240000);
       console.log('TEST_SIDECAR ' + JSON.stringify(sidecar.info));
+      log('TEST_SIDECAR ' + JSON.stringify(sidecar.info));
       if (!ok) throw new Error('sidecar not ready: ' + sidecar.info.error);
       const res = await testPipeline(String(argv['test-pipeline']));
       console.log('TEST_PIPELINE_RESULT ' + JSON.stringify(res));
+      log('TEST_PIPELINE_RESULT ' + JSON.stringify(res));   // the log file too: Windows GUI apps have no console in CI
     }
     if (argv.screenshots) {
       const dir = typeof argv.screenshots === 'string' ? argv.screenshots : path.join(ROOT, 'screenshots');
       if (argv['wait-ready']) await waitReady(240000);
       await new Promise((r) => setTimeout(r, 1200));
-      for (const which of ['hub:home', 'hub:home@560', 'hub:history', 'hub:settings@1050', 'hub:dictionary', 'hub:snippets', 'hub:settings', 'overlay:listening', 'overlay:transcribing', 'overlay:done', 'overlay:error']) {
+      const list = argv['screenshots-only'] ? String(argv['screenshots-only']).split(',') : null;
+      for (const which of list || ['hub:home', 'hub:home@560', 'hub:history', 'hub:settings@1050', 'hub:dictionary', 'hub:snippets', 'hub:settings', 'overlay:listening', 'overlay:transcribing', 'overlay:done', 'overlay:error']) {
         const out = path.join(dir, which.replace(':', '-').replace('@', '-') + '.png');
         await takeScreenshot(which, out);
         console.log('SCREENSHOT ' + out);
@@ -1232,8 +1243,9 @@ app.whenReady().then(async () => {
     // The first getUserMedia would ask anyway; asking up front avoids losing the first dictation to the dialog.
     // Not awaited: an unanswered system dialog must not hold the whole app back.
     // Installed app, first launches: macOS's own dialog points to the Accessibility pane.
-    if (!DEV_MODE && app.isPackaged && !systemPreferences.isTrustedAccessibilityClient(false)) systemPreferences.isTrustedAccessibilityClient(true);
-    if (!DEV_MODE && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
+    // (On first launch the assistant asks, with an explanation: no dialog out of the blue.)
+    if (!DEV_MODE && app.isPackaged && settings.get().onboarded && !systemPreferences.isTrustedAccessibilityClient(false)) systemPreferences.isTrustedAccessibilityClient(true);
+    if (!DEV_MODE && settings.get().onboarded && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
       systemPreferences.askForMediaAccess('microphone').then((ok) => { log('microphone access:', ok); pushState(); }).catch((e) => log('microphone access:', e.message));
     }
   }

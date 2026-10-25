@@ -331,12 +331,87 @@
           <div class="form-actions start">
             <button class="btn ghost" type="button" id="open-logs"><svg class="i"><use href="#i-doc"/></svg><span>Journaux</span></button>
             <button class="btn ghost" type="button" id="open-data"><svg class="i"><use href="#i-folder"/></svg><span>Dossier de données</span></button>
+            <button class="btn ghost" type="button" id="open-onboard"><svg class="i"><use href="#i-arrow"/></svg><span>Revoir l’assistant de démarrage</span></button>
           </div>
         </div>
       </div>
       <p class="version" id="version"></p>
     </section>
   </main>
+
+  <!-- First-run assistant: one step at a time, each one ticks itself when the system confirms it -->
+  <div class="onboard" id="onboard" hidden>
+    <div class="ob-card">
+      <aside class="ob-rail">
+        <div class="ob-brand"><svg viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="url(#g-brand)"/><g stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M9 13.5v5"/><path d="M13 10v12"/><path d="M17 12.5v7"/><path d="M21 9v14"/><path d="M25 14v4" opacity=".7"/></g></svg><span>OxoFlow</span></div>
+        <ol class="ob-steps" id="ob-steps"></ol>
+      </aside>
+      <section class="ob-main">
+        <div class="ob-pane" data-step="welcome">
+          <div class="ob-wave" aria-hidden="true"></div>
+          <h1>Ta voix, <em>écrite partout.</em></h1>
+          <p>Parle dans n’importe quelle app, OxoFlow écrit à ta place. Tout se passe sur cet ordinateur : rien n’est envoyé en ligne.</p>
+          <p class="ob-small">Deux minutes de réglages, une seule fois.</p>
+          <div class="ob-actions"><button class="btn primary" type="button" data-ob-next>Commencer</button></div>
+        </div>
+        <div class="ob-pane" data-step="mic">
+          <div class="ob-icon"><svg><use href="#i-mic"/></svg></div>
+          <h2>Le micro</h2>
+          <p>Pour t’entendre. Le son est transcrit sur place puis oublié.</p>
+          <div class="ob-status" id="ob-mic-status"></div>
+          <div class="ob-actions"><button class="btn primary" type="button" id="ob-mic-btn">Autoriser le micro</button></div>
+        </div>
+        <div class="ob-pane" data-step="ax">
+          <div class="ob-icon"><svg><use href="#i-shield"/></svg></div>
+          <h2>Écrire à ta place</h2>
+          <p>Pour coller le texte là où est ton curseur, macOS demande l’autorisation <b>Accessibilité</b>. Clique ci-dessous, puis active <b>OxoFlow</b> dans la liste.</p>
+          <div class="ob-mock" aria-hidden="true">
+            <div class="ob-mock-row"><span class="ob-mock-icon"></span><span>OxoFlow</span><span class="ob-mock-toggle"><i></i></span></div>
+          </div>
+          <div class="ob-status" id="ob-ax-status"></div>
+          <div class="ob-actions"><button class="btn primary" type="button" data-ax-prompt>Ouvrir les réglages</button></div>
+        </div>
+        <div class="ob-pane" data-step="fn">
+          <div class="ob-icon key">fn</div>
+          <h2>La touche fn</h2>
+          <p>Tu dicteras en <b>maintenant fn</b>. Pour que macOS n’ouvre pas les emojis en même temps : <b>Clavier › « Appuyer sur la touche 🌐 pour » › Ne rien faire</b>.</p>
+          <div class="ob-status" id="ob-fn-status"></div>
+          <div class="ob-actions">
+            <button class="btn primary" type="button" id="ob-fn-btn">Ouvrir Clavier</button>
+            <button class="btn" type="button" id="ob-input-btn" hidden>Autoriser l’écoute de fn</button>
+          </div>
+        </div>
+        <div class="ob-pane" data-step="shortcut">
+          <div class="ob-icon"><svg><use href="#i-bolt"/></svg></div>
+          <h2>Ton raccourci</h2>
+          <p>Place ton curseur n’importe où, appuie sur ton raccourci et parle. Appuie à nouveau : le texte s’écrit. Tu peux le changer dans Paramètres.</p>
+          <div class="keys lg ob-keys" id="ob-shortcut"></div>
+          <div class="ob-actions"><button class="btn primary" type="button" data-ob-next>Continuer</button></div>
+        </div>
+        <div class="ob-pane" data-step="model">
+          <div class="ob-icon"><svg><use href="#i-chip"/></svg></div>
+          <h2>Le moteur de transcription</h2>
+          <p>Le modèle est téléchargé une seule fois, puis tout fonctionne hors ligne.</p>
+          <div class="ob-progress"><span id="ob-model-fill"></span></div>
+          <div class="ob-status" id="ob-model-status"></div>
+        </div>
+        <div class="ob-pane" data-step="try">
+          <div class="ob-icon"><svg><use href="#i-type"/></svg></div>
+          <h2>Essaie !</h2>
+          <p id="ob-try-hint">Le curseur est dans la zone ci-dessous. Maintiens <b>fn</b>, dis « Bonjour, ceci est mon premier essai », puis relâche.</p>
+          <textarea id="ob-try" placeholder="Ta phrase apparaîtra ici…"></textarea>
+          <div class="ob-status" id="ob-try-status"></div>
+        </div>
+        <div class="ob-pane" data-step="done">
+          <div class="ob-icon ok"><svg><use href="#i-check"/></svg></div>
+          <h2>C’est prêt.</h2>
+          <ul class="ob-tips" id="ob-tips"></ul>
+          <div class="ob-actions"><button class="btn primary" type="button" id="ob-finish">Commencer à dicter</button></div>
+        </div>
+        <button class="ob-skip" type="button" id="ob-skip">Passer cette étape</button>
+      </section>
+    </div>
+  </div>
 
   <div class="toast" id="toast"><svg><use href="#i-check"/></svg><span id="toast-text"></span></div>
   <script src="hub.js"></script>
