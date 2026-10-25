@@ -6,6 +6,7 @@ Usage:  python stt/build_stt.py [--no-cuda]
 Output: stt/dist/freeflow-stt/freeflow-stt.exe  (+ _internal/cuda/*.dll)
 """
 import glob
+import importlib.util
 import os
 import shutil
 import site
@@ -52,6 +53,8 @@ def main():
         "--collect-all", "onnxruntime",
         "--collect-all", "av",
         "--collect-all", "tokenizers",
+        # huggingface_hub imports hf_xet dynamically (faster model downloads): include it explicitly.
+        *(["--collect-all", "hf_xet"] if importlib.util.find_spec("hf_xet") else []),
         "--collect-submodules", "huggingface_hub",
         "--hidden-import", "numpy",
     ]
@@ -59,7 +62,7 @@ def main():
     for mod in ("torch", "torchaudio", "matplotlib", "tkinter", "PIL", "scipy", "pandas",
                 "rapidocr_onnxruntime", "sounddevice", "IPython", "jedi", "pytest", "nvidia",
                 "numba", "llvmlite", "pyarrow", "pydantic", "pydantic_core", "cryptography",
-                "win32com", "pythonwin", "pywin32", "win32api", "hf_xet", "zstandard", "tzdata",
+                "win32com", "pythonwin", "pywin32", "win32api", "zstandard", "tzdata",
                 "cv2", "sklearn", "sympy", "psutil"):
         cmd += ["--exclude-module", mod]
     # delvewheel-patched PyAV loads its FFmpeg DLLs from <site>/av.libs -> ship as _internal/av.libs

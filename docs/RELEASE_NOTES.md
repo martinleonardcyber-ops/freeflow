@@ -1,4 +1,4 @@
-## OxoFlow 1.6.0
+## OxoFlow 1.6.1
 
 Dictée vocale 100 % locale : maintiens **fn** (Mac) ou appuie sur **Ctrl + Alt + Espace** (Windows), parle, le texte s'écrit là où est ton curseur. Tout tourne sur ta machine, rien n'est envoyé en ligne.
 

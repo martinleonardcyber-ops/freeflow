@@ -38,12 +38,17 @@ jobs:
           python-version: '3.11'
       - name: Speech engine (PyInstaller + CUDA runtime)
         run: |
-          pip install faster-whisper pyinstaller nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"
+          pip install faster-whisper hf_xet pyinstaller nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"
           python stt/build_stt.py
       - run: npm ci --no-audit --no-fund
       - run: node node_modules/electron/install.js
       - run: npm run build:native
       - run: npm run release
+      # The CPU model the smoke test downloads: cached, so the test does not depend on Hugging Face's speed.
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\OxoFlow\models
+          key: whisper-small-cpu-v1
       # First real run of the Windows app: transcribe a French recording on the CPU
       # (the runner has no NVIDIA GPU, so this also exercises the fallback model).
       - name: Smoke test (real transcription)
@@ -53,7 +58,7 @@ jobs:
         run: |
           $exe = Get-ChildItem -Recurse -Filter OxoFlow.exe release | Where-Object { $_.FullName -notmatch 'installer' } | Select-Object -First 1
           $wav = Join-Path $PWD 'test/fixtures/bonjour-fr.wav'
-          $p = Start-Process -FilePath $exe.FullName -ArgumentList "--user-data-dir=$PWD/ci-profile", "--test-pipeline=$wav", '--exit' -PassThru
+          $p = Start-Process -FilePath $exe.FullName -ArgumentList "--user-data-dir=$PWD/ci-profile", "--test-pipeline=$wav", '--wait-ready-ms=600000', '--exit' -PassThru
           if (-not $p.WaitForExit(900000)) { $p.Kill(); throw 'timeout' }
           $log = Get-Content "ci-profile/logs/oxoflow.log"
           $log | Select-Object -Last 25

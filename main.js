@@ -1256,7 +1256,7 @@ async function waitReady(timeoutMs) {
 async function runDevCommands() {
   try {
     if (argv['test-pipeline']) {
-      const ok = await waitReady(240000);
+      const ok = await waitReady(Number(argv['wait-ready-ms']) || 240000);
       console.log('TEST_SIDECAR ' + JSON.stringify(sidecar.info));
       log('TEST_SIDECAR ' + JSON.stringify(sidecar.info));
       if (!ok) throw new Error('sidecar not ready: ' + sidecar.info.error);
