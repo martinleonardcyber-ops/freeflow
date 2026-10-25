@@ -1,0 +1,146 @@
+/* Menu-bar panel (like a native macOS popover): translucent, rounded, dense.
+   The window itself is transparent; on macOS the vibrancy shows through. */
+@font-face {
+  font-family: 'Figtree';
+  src: url('../../assets/fonts/figtree-2.woff2') format('woff2');
+  font-weight: 300 900;
+  font-display: swap;
+}
+
+:root {
+  --panel: rgba(246, 245, 250, 0.72);
+  --text: #16141c;
+  --muted: rgba(22, 20, 28, 0.55);
+  --line: rgba(22, 20, 28, 0.09);
+  --tile: rgba(22, 20, 28, 0.05);
+  --hover: rgba(22, 20, 28, 0.06);
+  --key: rgba(22, 20, 28, 0.42);
+  --iris: #6a4cf0;
+  --ember: #ff6a45;
+  --ok: #10a37f;
+  --warn: #e8930c;
+  --bad: #e5484d;
+  --grad: linear-gradient(100deg, #b98cf5 0%, #e79bd6 45%, #f8c39b 100%);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --panel: rgba(30, 29, 36, 0.66);
+    --text: #f2f1f6;
+    --muted: rgba(242, 241, 246, 0.55);
+    --line: rgba(255, 255, 255, 0.08);
+    --tile: rgba(255, 255, 255, 0.06);
+    --hover: rgba(255, 255, 255, 0.07);
+    --key: rgba(242, 241, 246, 0.4);
+    --iris: #a493ff;
+    --ok: #3ccf9e;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: transparent; overflow: hidden; }
+body {
+  font-family: 'Figtree', system-ui, -apple-system, sans-serif; font-size: 13.5px; color: var(--text);
+  -webkit-font-smoothing: antialiased; user-select: none;
+}
+button { font: inherit; color: inherit; border: 0; background: transparent; cursor: default; text-align: left; }
+svg { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.panel {
+  position: relative; margin: 0; padding: 10px 8px 8px; border-radius: 14px;
+  background: var(--panel); border: 0.5px solid var(--line);
+}
+:root[data-platform="win32"] .panel { background: color-mix(in srgb, var(--panel) 100%, #000 0%); backdrop-filter: blur(30px); }
+
+/* header */
+.head { display: flex; align-items: center; gap: 11px; padding: 4px 6px 10px; }
+.logo svg { width: 38px; height: 38px; border-radius: 10px; box-shadow: 0 4px 12px -4px rgba(122, 92, 255, 0.6); stroke: none; }
+.title { flex: 1; min-width: 0; }
+.name { font-weight: 800; font-size: 16px; letter-spacing: -0.015em; display: flex; align-items: center; gap: 7px; }
+.tag { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); letter-spacing: 0; }
+.sub { font-size: 12.5px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.state { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--tile); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.state .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.state.ready .dot { background: var(--ok); }
+.state.listening .dot { background: var(--ember); animation: blink 0.9s infinite; }
+.state.error .dot { background: var(--bad); }
+@keyframes blink { 50% { opacity: 0.35; } }
+
+/* stat tiles */
+.tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; padding: 0 2px 8px; }
+.tile { display: flex; align-items: center; justify-content: center; gap: 6px; height: 36px; border-radius: 10px; background: var(--tile); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; }
+.tile svg { width: 15px; height: 15px; opacity: 0.75; }
+.tile b { font-weight: 750; }
+.tile svg.ember { color: var(--ember); opacity: 1; }
+
+.sep { height: 1px; background: var(--line); margin: 4px 8px; }
+
+/* rows */
+.rows { display: grid; }
+.row {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 38px; padding: 0 10px;
+  border-radius: 9px; transition: background 90ms;
+}
+.row:hover { background: var(--hover); }
+.row:active { background: color-mix(in srgb, var(--hover) 100%, var(--hover)); }
+.row svg { opacity: 0.85; }
+.row svg.iris { color: var(--iris); opacity: 1; }
+.lbl { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kbd { font-size: 12px; color: var(--key); font-weight: 600; letter-spacing: 0.02em; }
+.val { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.mini { font-size: 11px; color: var(--muted); font-weight: 600; }
+.chev { width: 15px; height: 15px; opacity: 0.55 !important; transition: transform 160ms; }
+.chev.open { transform: rotate(180deg); }
+
+.toggle { position: relative; flex: none; width: 38px; height: 22px; }
+.toggle input { position: absolute; inset: 0; margin: 0; opacity: 0; }
+.toggle i { position: absolute; inset: 0; border-radius: 999px; background: rgba(120, 120, 128, 0.32); transition: background 160ms; }
+.toggle i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); transition: transform 180ms cubic-bezier(0.2, 0.9, 0.2, 1.1); }
+.toggle input:checked + i { background: #34c759; }
+.toggle input:checked + i::after { transform: translateX(16px); }
+
+/* recent dictations (expandable) */
+.recent { display: grid; gap: 2px; padding: 2px 4px 4px 40px; }
+.recent button { display: block; width: 100%; padding: 7px 10px; border-radius: 8px; font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent button:hover { background: var(--hover); }
+.recent button small { color: var(--muted); font-weight: 600; margin-right: 6px; font-variant-numeric: tabular-nums; }
+.recent .none { font-size: 12.5px; color: var(--muted); padding: 6px 10px; }
+
+/* gradient call to action, like a native "Unlock" button */
+.cta {
+  display: flex; align-items: center; gap: 12px; width: calc(100% - 4px); margin: 8px 2px 6px; padding: 0 14px; height: 46px;
+  border-radius: 12px; background: var(--grad); color: #2a1838; font-weight: 750; font-size: 14px;
+  box-shadow: 0 6px 18px -8px rgba(190, 120, 230, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: transform 120ms, filter 120ms;
+}
+.cta:hover { filter: brightness(1.05); }
+.cta:active { transform: scale(0.985); }
+.cta span:first-of-type { flex: 1; }
+.cta svg { width: 19px; height: 19px; }
+.cta-key { font-size: 12px; font-weight: 800; padding: 2px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.45); }
+.cta.listening { background: linear-gradient(100deg, #ff8a66, #ff6a45); color: #fff; }
+.cta.listening .cta-key { background: rgba(255, 255, 255, 0.25); }
+
+/* last dictation card (like an update banner) */
+.last {
+  display: flex; align-items: center; gap: 10px; margin: 0 2px 6px; padding: 9px 10px 9px 12px; border-radius: 12px;
+  background: color-mix(in srgb, var(--ok) 13%, transparent); border: 1px solid color-mix(in srgb, var(--ok) 28%, transparent);
+  font-size: 12.5px;
+}
+.last svg { width: 16px; height: 16px; color: var(--ok); }
+.last span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.last button { font-weight: 700; font-size: 12px; padding: 4px 10px; border-radius: 7px; background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok); }
+.last button:hover { background: color-mix(in srgb, var(--ok) 32%, transparent); }
+
+.quit { color: var(--muted); }
+.quit .lbl { font-weight: 600; }
+
+.toast {
+  position: absolute; left: 50%; bottom: 14px; transform: translate(-50%, 8px); opacity: 0; pointer-events: none;
+  padding: 6px 12px; border-radius: 999px; background: var(--text); color: var(--panel); font-size: 12px; font-weight: 700;
+  transition: opacity 160ms, transform 160ms;
+}
+:root .toast { color: #fff; background: rgba(20, 20, 26, 0.92); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }

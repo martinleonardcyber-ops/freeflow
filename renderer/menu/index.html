@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; script-src 'self'">
+  <title>OxoFlow menu</title>
+  <link rel="stylesheet" href="menu.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="g-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b6cff"/><stop offset="1" stop-color="#ff7a59"/></linearGradient>
+    </defs>
+        <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M12 7.5V12l3 2"/><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5v4h4"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.2 14.6a1.5 1.5 0 0 0 .3 1.7l.1.1a1.9 1.9 0 1 1-2.7 2.7l-.1-.1a1.5 1.5 0 0 0-1.7-.3 1.5 1.5 0 0 0-.9 1.4v.2a1.9 1.9 0 1 1-3.8 0v-.1a1.5 1.5 0 0 0-1-1.4 1.5 1.5 0 0 0-1.7.3l-.1.1a1.9 1.9 0 1 1-2.7-2.7l.1-.1a1.5 1.5 0 0 0 .3-1.7 1.5 1.5 0 0 0-1.4-.9h-.2a1.9 1.9 0 1 1 0-3.8h.1a1.5 1.5 0 0 0 1.4-1 1.5 1.5 0 0 0-.3-1.7l-.1-.1a1.9 1.9 0 1 1 2.7-2.7l.1.1a1.5 1.5 0 0 0 1.7.3h.1a1.5 1.5 0 0 0 .9-1.4v-.2a1.9 1.9 0 1 1 3.8 0v.1a1.5 1.5 0 0 0 .9 1.4 1.5 1.5 0 0 0 1.7-.3l.1-.1a1.9 1.9 0 1 1 2.7 2.7l-.1.1a1.5 1.5 0 0 0-.3 1.7v.1a1.5 1.5 0 0 0 1.4.9h.2a1.9 1.9 0 1 1 0 3.8h-.1a1.5 1.5 0 0 0-1.4.9z"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11.5" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6A1.5 1.5 0 0 0 14 4.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-chip" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/><path d="M9.5 9.5h5v5h-5zM9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></symbol>
+    <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 21c3.6 0 6-2.4 6-5.8 0-3.2-2.2-5-3.4-7.2-.6 1.6-1.5 2.5-2.6 2.9.4-2.9-.9-5.9-3.5-7.4.3 2.8-1 4.6-2.3 6.3C5 11.3 6 13.6 6 15.2 6 18.6 8.4 21 12 21z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 1.8"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.2 17a8.5 8.5 0 1 1 15.6 0"/><path d="m12 13 3.5-4"/><circle cx="12" cy="13.5" r="1.3"/></symbol>
+    <symbol id="i-type" viewBox="0 0 24 24"><path d="M5 6.5V5h14v1.5M12 5v14M9 19h6"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-paste" viewBox="0 0 24 24"><rect x="6" y="4.5" width="12" height="16" rx="2.5"/><path d="M9 4.5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v.5M9.5 11h5M9.5 14.5h3"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3.5v8"/><path d="M7.2 6.6a7 7 0 1 0 9.6 0"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3.5 13.7 9 19 10.7 13.7 12.4 12 18l-1.7-5.6L5 10.7 10.3 9z"/><path d="M18.5 3.5v3M17 5h3M5.5 16.5v3M4 18h3"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.5 5.3 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.3-3.5-8.5s1.1-6.1 3.5-8.5z"/></symbol>
+    <symbol id="i-hold" viewBox="0 0 24 24"><rect x="5" y="9" width="14" height="10" rx="3"/><path d="M12 3.5v3M8.5 5l1 2M15.5 5l-1 2"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
+    <symbol id="i-pill" viewBox="0 0 24 24"><rect x="4" y="15" width="16" height="4" rx="2"/><path d="M8 11.5v-2M12 11.5v-5M16 11.5v-3"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+  </svg>
+
+  <div class="panel" id="panel">
+    <header class="head">
+      <div class="logo"><svg viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="url(#g-brand)"/><g stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M9 13.5v5"/><path d="M13 10v12"/><path d="M17 12.5v7"/><path d="M21 9v14"/><path d="M25 14v4" opacity=".7"/></g></svg></div>
+      <div class="title">
+        <div class="name">OxoFlow <span class="tag">Local</span></div>
+        <div class="sub" id="sub">Chargement…</div>
+      </div>
+      <div class="state" id="state"><span class="dot"></span><span id="state-text">…</span></div>
+    </header>
+
+    <div class="tiles">
+      <div class="tile" title="Mots dictés aujourd’hui"><svg><use href="#i-type"/></svg><b id="t-today">0</b></div>
+      <div class="tile" title="Vitesse moyenne à l’oral (mots/min)"><svg><use href="#i-gauge"/></svg><b id="t-wpm">0</b></div>
+      <div class="tile" title="Jours d’affilée avec une dictée"><svg class="ember"><use href="#i-flame"/></svg><b id="t-streak">0</b></div>
+      <div class="tile" title="Latence moyenne"><svg><use href="#i-clock"/></svg><b id="t-lat">—</b></div>
+      <div class="tile" title="Moteur de transcription"><svg><use href="#i-chip"/></svg><b id="t-engine">—</b></div>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="rows">
+      <label class="row"><svg><use href="#i-hold"/></svg><span class="lbl">Maintenir pour parler</span><span class="kbd" id="k-shortcut">fn</span><span class="toggle"><input type="checkbox" data-set="ptt"><i></i></span></label>
+      <label class="row"><svg><use href="#i-paste"/></svg><span class="lbl">Coller automatiquement</span><span class="toggle"><input type="checkbox" data-set="autoPaste"><i></i></span></label>
+      <label class="row"><svg class="iris"><use href="#i-sparkle"/></svg><span class="lbl">Mise en forme IA</span><span class="mini" id="ai-note"></span><span class="toggle"><input type="checkbox" data-set="aiFormat"><i></i></span></label>
+      <label class="row"><svg><use href="#i-volume"/></svg><span class="lbl">Sons</span><span class="toggle"><input type="checkbox" data-set="sounds"><i></i></span></label>
+      <label class="row"><svg><use href="#i-pill"/></svg><span class="lbl">Barre Flow</span><span class="toggle"><input type="checkbox" data-set="flowBar"><i></i></span></label>
+      <button class="row" type="button" id="lang"><svg><use href="#i-globe"/></svg><span class="lbl">Langue</span><span class="val" id="lang-val">Auto</span><svg class="chev"><use href="#i-chev"/></svg></button>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="rows">
+      <button class="row" type="button" id="recent-toggle"><svg><use href="#i-history"/></svg><span class="lbl">Dictées récentes</span><span class="val" id="recent-count"></span><svg class="chev" id="recent-chev"><use href="#i-chev"/></svg></button>
+      <div class="recent" id="recent" hidden></div>
+      <button class="row" type="button" data-act="copy-last"><svg><use href="#i-copy"/></svg><span class="lbl">Copier la dernière dictée</span></button>
+      <button class="row" type="button" data-act="paste-last"><svg><use href="#i-paste"/></svg><span class="lbl">Coller la dernière dictée</span><span class="kbd" id="k-paste">⌃⌘V</span></button>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="rows">
+      <button class="row" type="button" data-act="open"><svg><use href="#i-home"/></svg><span class="lbl">Ouvrir OxoFlow</span><span class="kbd" id="k-open">⌘O</span></button>
+      <button class="row" type="button" data-act="settings"><svg><use href="#i-gear"/></svg><span class="lbl">Paramètres…</span><span class="kbd" id="k-settings">⌘,</span></button>
+    </div>
+
+    <button class="cta" type="button" data-act="dictate"><svg><use href="#i-mic"/></svg><span id="cta-text">Dicter maintenant</span><span class="cta-key" id="cta-key">fn</span></button>
+    <div class="last" id="last" hidden><svg><use href="#i-check"/></svg><span id="last-text"></span><button type="button" data-act="paste-last">Coller</button></div>
+
+    <button class="row quit" type="button" data-act="quit"><svg><use href="#i-power"/></svg><span class="lbl">Quitter OxoFlow</span><span class="kbd" id="k-quit">⌘Q</span></button>
+    <div class="toast" id="toast"></div>
+  </div>
+  <script src="menu.js"></script>
+</body>
+</html>

@@ -224,7 +224,11 @@ function buildState() {
 }
 
 function pushState() {
-  if (hub && !hub.isDestroyed()) hub.webContents.send('ff:state', buildState());
+  const hubOn = hub && !hub.isDestroyed(), menuOn = menuWin && !menuWin.isDestroyed() && menuWin.isVisible();
+  if (!hubOn && !menuOn) return;
+  const st = buildState();
+  if (hubOn) hub.webContents.send('ff:state', st);
+  if (menuOn) menuWin.webContents.send('ff:state', st);
 }
 
 // ---- Paths -----------------------------------------------------------------
@@ -315,14 +319,74 @@ function trayIcon(name) {
   return nativeImage.createFromPath(path.join(ASSETS, name));
 }
 
+// ---- Menu-bar panel: a click on the tray icon opens a small rich window
+// (state, quick toggles, actions); a right click keeps the plain native menu.
+let menuWin = null, trayMenu = null, menuHiddenAt = 0;
+const MENU_W = 360;
+function createMenuWindow() {
+  menuWin = new BrowserWindow({
+    width: MENU_W, height: 560, show: false, frame: false, transparent: true, backgroundColor: '#00000000',
+    resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
+    skipTaskbar: true, alwaysOnTop: true, hasShadow: true,
+    // NSPanel that never activates OxoFlow: the user's app keeps the focus, so
+    // "paste last" / "dictate" land in it once the panel closes.
+    ...(IS_MAC ? { type: 'panel', vibrancy: 'popover', visualEffectState: 'active', roundedCorners: true } : {}),
+    webPreferences: { preload: path.join(ROOT, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  menuWin.setAlwaysOnTop(true, 'pop-up-menu');
+  menuWin.loadFile(path.join(ROOT, 'renderer', 'menu', 'index.html'));
+  menuWin.on('blur', () => hideMenu());
+}
+function hideMenu() {
+  if (menuWin && !menuWin.isDestroyed() && menuWin.isVisible()) { menuWin.hide(); menuHiddenAt = Date.now(); }
+}
+function placeMenu() {
+  if (!tray || !menuWin) return;
+  const b = tray.getBounds();
+  const wa = screen.getDisplayMatching(b).workArea;
+  const [w, h] = menuWin.getSize();
+  const x = Math.round(Math.min(Math.max(b.x + b.width / 2 - w / 2, wa.x + 8), wa.x + wa.width - w - 8));
+  const below = b.y < wa.y + wa.height / 2;                 // menu bar at the top (macOS), taskbar at the bottom (Windows)
+  const y = Math.round(below ? b.y + b.height + 6 : b.y - h - 8);
+  menuWin.setPosition(x, Math.max(wa.y, y));
+}
+function toggleMenu() {
+  if (!menuWin || menuWin.isDestroyed()) createMenuWindow();
+  if (menuWin.isVisible()) { hideMenu(); return; }
+  if (Date.now() - menuHiddenAt < 250) return;              // the click that closed it by blurring
+  placeMenu();
+  menuWin.show();
+  menuWin.focus();
+  menuWin.webContents.send('ff:menu-shown');
+  pushState();
+}
+ipcMain.on('ff:menu-size', (_e, h) => {
+  if (!menuWin || menuWin.isDestroyed()) return;
+  menuWin.setSize(MENU_W, Math.max(200, Math.min(900, Math.round(Number(h) || 0))));
+  if (menuWin.isVisible()) placeMenu();
+});
+ipcMain.handle('ff:menu-action', async (_e, action) => {
+  const last = history.get()[0];
+  switch (action) {
+    case 'close': hideMenu(); break;
+    case 'open': hideMenu(); showHub(); break;
+    case 'settings': hideMenu(); showHub(); hub.webContents.send('ff:navigate', 'settings'); break;
+    case 'dictate': hideMenu(); setTimeout(() => toggleDictation(), 120); break;
+    case 'copy-last': if (last) await clipboard.writeText(last.text); break;
+    case 'paste-last': hideMenu(); setTimeout(() => pasteLast().catch((e) => log('paste last:', e.message)), 180); break;
+    case 'quit': quitApp(); break;
+    default: break;
+  }
+  return true;
+});
+
 function createTray() {
   tray = new Tray(trayIcon('tray-loading.png'));
   tray.setToolTip('OxoFlow — Chargement du modèle…');
-  if (!IS_MAC) {                 // macOS: a click opens the menu, like every menu-bar item
-    tray.on('click', showHub);
-    tray.on('double-click', showHub);
-  }
+  tray.on('click', toggleMenu);
+  tray.on('right-click', () => { hideMenu(); if (trayMenu) tray.popUpContextMenu(trayMenu); });
   updateTray();
+  createMenuWindow();
 }
 
 function prettyShortcut(acc) {
@@ -368,7 +432,8 @@ function updateTray() {
   const engine = info.ready ? `${info.device === 'cuda' ? 'GPU' : info.device === 'mlx' ? 'GPU Metal' : 'CPU'} · ${info.model}` : info.loading ? loadingLabel(info) : (info.error ? 'Moteur indisponible' : '…');
   tray.setToolTip(`OxoFlow — ${listening ? 'Écoute…' : busy ? 'Transcription…' : engine}\nRaccourci : ${prettyShortcut(s.shortcut)}`);
   if (IS_MAC) tray.setTitle(listening ? ' Écoute' : '');
-  tray.setContextMenu(Menu.buildFromTemplate([
+  // Right-click fallback; a left click opens the panel (setContextMenu would swallow it).
+  trayMenu = (Menu.buildFromTemplate([
     { label: 'Ouvrir OxoFlow', click: showHub },
     { label: listening ? 'Arrêter la dictée (mains libres)' : 'Démarrer la dictée (mains libres)', enabled: !!info.ready && !busy, click: () => toggleDictation() },
     { type: 'separator' },
@@ -393,6 +458,7 @@ function setPhase(phase, payload = {}) {
   dictation.phase = phase;
   overlaySend('ff:overlay', { phase, ...payload, ...(phase === 'idle' ? { bar: flowBarOn(), hint: barHint() } : {}) });
   if (hub && !hub.isDestroyed()) hub.webContents.send('ff:dictation', { phase, ...payload });
+  if (menuWin && !menuWin.isDestroyed() && menuWin.isVisible()) menuWin.webContents.send('ff:dictation', { phase });
   updateTray();
 }
 
@@ -1142,6 +1208,15 @@ async function uiTest(dir) {
 }
 
 async function takeScreenshot(which, out) {
+  if (which === 'menu') {             // the menu-bar panel, opened as by a click on the icon
+    if (!menuWin || !menuWin.isVisible()) toggleMenu();
+    await new Promise((r) => setTimeout(r, 900));
+    const img = await menuWin.webContents.capturePage();
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, img.toPNG());
+    hideMenu();
+    return out;
+  }
   let win = which.startsWith('overlay') ? overlay : hub;
   if (win === hub) {
     // "hub:home@560" = the home section scrolled down by 560 px
