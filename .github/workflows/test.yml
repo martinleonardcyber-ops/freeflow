@@ -1,5 +1,3 @@
-# À activer : gh auth refresh -s workflow, puis
-#   mkdir -p .github/workflows && git mv docs/ci/github-actions-test.yml .github/workflows/test.yml
 name: tests
 on: [push, pull_request]
 jobs:

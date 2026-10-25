@@ -1,6 +1,3 @@
-# À activer : gh auth refresh -s workflow, puis
-#   mkdir -p .github/workflows && git mv docs/ci/github-actions-release.yml .github/workflows/release.yml
-#
 # Builds the downloads on GitHub's machines and attaches them to a GitHub Release:
 #   OxoFlow-mac-arm64.dmg  (Apple Silicon, macos-14 runner, scripts/build-mac.sh)
 #   OxoFlow-Setup.exe      (Windows x64, engine with PyInstaller + CUDA DLLs, NSIS installer)
