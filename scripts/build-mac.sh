@@ -36,9 +36,8 @@ echo "3/5 Icône"
 ICONSET="$BUILD/OxoFlow.iconset"; mkdir -p "$ICONSET"
 for s in 16 32 128 256 512; do
   sips -z $s $s assets/icon.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
-  d=$((s * 2)); [ $d -le 512 ] && sips -z $d $d assets/icon.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+  sips -z $((s * 2)) $((s * 2)) assets/icon.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
 done
-cp assets/icon.png "$ICONSET/icon_256x256@2x.png"
 iconutil -c icns "$ICONSET" -o "$BUILD/OxoFlow.icns"
 
 echo "4/5 Application"
@@ -58,7 +57,7 @@ npx --no-install @electron/packager . OxoFlow --platform=darwin --arch=arm64 --o
   --ignore='^/stt($|/)' --ignore='^/native/.*\.(swift|cs)$' --ignore='^/native/(PasteHelperMac|FnKeyMac)$' \
   --ignore='^/build($|/)' --ignore='^/release($|/)' --ignore='^/dist($|/)' --ignore='^/dev($|/)' --ignore='^/test($|/)' --ignore='^/site($|/)' --ignore='^/\.github($|/)' --ignore='^/docs($|/)' \
   --ignore='^/installer($|/)' --ignore='^/scripts($|/)' --ignore='^/screenshots($|/)' --ignore='^/\.git' \
-  --ignore='^/assets/make_.*\.py$' --ignore='^/README\.md$' >/dev/null
+  --ignore='^/assets/make_.*\.py$' --ignore='^/assets/dmg-background' --ignore='^/README\.md$' >/dev/null
 APP="$ROOT/release/OxoFlow-darwin-arm64/OxoFlow.app"
 # @electron/packager turns the engine's relative symlinks (python3 -> python3.12...)
 # into absolute paths into build/: once build/ is gone the app has no Python.
@@ -84,11 +83,12 @@ for arg in "$@"; do
       ditto "$APP" /Applications/OxoFlow.app
       echo "Installé : /Applications/OxoFlow.app" ;;
     --dmg)
-      STAGE="$BUILD/dmg"; rm -rf "$STAGE"; mkdir -p "$STAGE"
-      ditto "$APP" "$STAGE/OxoFlow.app"
-      ln -s /Applications "$STAGE/Applications"
+      # Styled install window (background, icon layout, no toolbar): dmgbuild
+      # writes the Finder .DS_Store itself, no GUI or AppleScript needed (CI-safe).
+      tiffutil -cathidpicheck assets/dmg-background.png assets/dmg-background@2x.png -out "$BUILD/dmg-background.tiff" 2>/dev/null
       DMG="$ROOT/release/OxoFlow-mac-arm64.dmg"; rm -f "$DMG"
-      hdiutil create -quiet -volname "OxoFlow" -srcfolder "$STAGE" -fs HFS+ -format ULMO -ov "$DMG"
+      uvx --quiet --from dmgbuild==1.6.7 dmgbuild -s scripts/dmg-settings.py -D app="$APP" \
+        -D background="$BUILD/dmg-background.tiff" -D volicon="$BUILD/OxoFlow.icns" "OxoFlow" "$DMG"
       du -sh "$DMG" | awk '{print "Image disque : " $2 " (" $1 ")"}' ;;
   esac
 done
