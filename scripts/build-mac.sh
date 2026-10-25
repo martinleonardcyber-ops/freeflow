@@ -60,6 +60,16 @@ npx --no-install @electron/packager . OxoFlow --platform=darwin --arch=arm64 --o
   --ignore='^/installer($|/)' --ignore='^/scripts($|/)' --ignore='^/screenshots($|/)' --ignore='^/\.git' \
   --ignore='^/assets/make_.*\.py$' --ignore='^/README\.md$' >/dev/null
 APP="$ROOT/release/OxoFlow-darwin-arm64/OxoFlow.app"
+# @electron/packager turns the engine's relative symlinks (python3 -> python3.12...)
+# into absolute paths into build/: once build/ is gone the app has no Python.
+# Point them back at their sibling files, then refuse any link leaving the bundle.
+find "$APP/Contents/Resources/engine" -type l | while read -r link; do
+  target="$(readlink "$link")"
+  case "$target" in /*) ln -sfn "$(basename "$target")" "$link" ;; esac
+done
+if find "$APP/Contents/Resources/engine" -type l -exec readlink {} \; | grep -q '^/'; then
+  echo "!! lien absolu restant dans le moteur embarqué" >&2; exit 1
+fi
 
 echo "5/5 Signature ad hoc"
 # Editing Info.plist breaks Electron's signature; Apple Silicon refuses unsigned code.
