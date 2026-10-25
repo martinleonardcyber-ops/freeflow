@@ -214,6 +214,7 @@ function buildState() {
     // macOS: posting Cmd+V and the low-level keyboard hook both need the Accessibility permission.
     accessibility: IS_MAC ? systemPreferences.isTrustedAccessibilityClient(false) : true,
     microphone: IS_MAC ? systemPreferences.getMediaAccessStatus('microphone') : 'granted',
+    fnDenied,
     fnUsage,
   };
 }
@@ -728,10 +729,13 @@ function readFnUsage() {
 // macOS fn key: native/FnKeyMac prints down / up / spoil; the same push-to-talk
 // logic as the uiohook path drives the dictation.
 let fnProc = null;
+let fnDenied = false;      // macOS refused the keyboard tap: Input Monitoring / Accessibility missing
+let fnRetry = null;
 function fnHelperPath() {
   return [path.join(process.resourcesPath || '', 'FnKeyMac'), path.join(ROOT, 'native', 'FnKeyMac')].find((p) => fs.existsSync(p)) || null;
 }
 function stopFnHook() {
+  clearTimeout(fnRetry);
   if (fnProc) { const p = fnProc; fnProc = null; try { p.kill(); } catch { /* ignore */ } }
 }
 function startFnHook(mode) {
@@ -752,10 +756,23 @@ function startFnHook(mode) {
       else if (ev === 'spoil') hook.spoiled = true;
       else if (ev === 'up' && hook.comboDown) { hook.comboDown = false; onComboUp(); }
       else if (ev === 'ready') log(`fn: listening (${mode})`);
-      else if (ev === 'denied') { log('fn: keyboard access denied (Accessibility)'); shortcutOk = false; updateTray(); pushState(); }
+      else if (ev === 'denied') {
+        if (!fnDenied) log('fn: keyboard access denied (Input Monitoring / Accessibility), retrying every 4 s');
+        fnDenied = true; shortcutOk = false; updateTray(); pushState();
+      } else if (ev === 'ready' && fnDenied) { fnDenied = false; log('fn: keyboard access granted'); pushState(); }
     }
   });
-  proc.on('exit', (code) => { if (fnProc === proc) { fnProc = null; log(`fn: helper exited (${code})`); if (code) { shortcutOk = false; updateTray(); pushState(); } } });
+  proc.on('exit', (code) => {
+    if (fnProc !== proc) return;
+    fnProc = null;
+    if (code === 2) {   // permission not granted yet: try again quietly until it is
+      clearTimeout(fnRetry);
+      fnRetry = setTimeout(() => { if (!fnProc && settings.get().shortcut === 'Fn' && !shortcutSuspended) shortcutOk = startFnHook(settings.get().mode); }, 4000);
+      return;
+    }
+    log(`fn: helper exited (${code})`);
+    if (code) { shortcutOk = false; updateTray(); pushState(); }
+  });
   return true;
 }
 
@@ -1000,6 +1017,7 @@ function warmAi() {
   aiFormat('bonjour, ceci est un essai', { endpoint: s.aiEndpoint, model: s.aiModel, timeoutMs: 60000 })
     .then((r) => log(`ai format ready: ${r.model} (${r.ms} ms)`)).catch((e) => log('ai format warm-up:', e.message));
 }
+ipcMain.handle('ff:open-input-monitoring', () => shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent'));
 ipcMain.handle('ff:open-keyboard-settings', () => shell.openExternal('x-apple.systempreferences:com.apple.Keyboard-Settings.extension'));
 ipcMain.handle('ff:mic-prompt', async () => {
   if (!IS_MAC) return true;
@@ -1194,6 +1212,8 @@ app.whenReady().then(async () => {
   if (IS_MAC) {
     // The first getUserMedia would ask anyway; asking up front avoids losing the first dictation to the dialog.
     // Not awaited: an unanswered system dialog must not hold the whole app back.
+    // Installed app, first launches: macOS's own dialog points to the Accessibility pane.
+    if (!DEV_MODE && app.isPackaged && !systemPreferences.isTrustedAccessibilityClient(false)) systemPreferences.isTrustedAccessibilityClient(true);
     if (!DEV_MODE && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
       systemPreferences.askForMediaAccess('microphone').then((ok) => { log('microphone access:', ok); pushState(); }).catch((e) => log('microphone access:', e.message));
     }

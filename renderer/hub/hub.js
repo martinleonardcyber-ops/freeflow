@@ -178,6 +178,8 @@
       const fn = state.settings.shortcut === 'Fn';
       $('#step-fn').hidden = !fn;
       if (fn) { $('#step-fn').className = 'step ' + (state.fnUsage === 0 ? 'done' : ''); steps.push(state.fnUsage === 0); }
+      $('#step-input').hidden = !(fn && state.fnDenied);
+      if (fn && state.fnDenied) { $('#step-input').className = 'step'; steps.push(false); }
     }
     const done = steps.filter(Boolean).length;
     $('#setup').hidden = done === steps.length;
@@ -605,6 +607,7 @@
   });
   $('#step-mic-btn').addEventListener('click', async () => { if (await ff.invoke('ff:mic-prompt')) toast('Micro autorisé'); });
   $('#step-fn-btn').addEventListener('click', () => ff.invoke('ff:open-keyboard-settings'));
+  $('#step-input-btn').addEventListener('click', () => ff.invoke('ff:open-input-monitoring'));
   $('#shortcut-fn').addEventListener('click', async () => {
     await ff.invoke('ff:set-settings', { shortcut: 'Fn', mode: 'ptt' });
     toast('Raccourci : maintenir fn');

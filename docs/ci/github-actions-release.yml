@@ -1,0 +1,69 @@
+# À activer : gh auth refresh -s workflow, puis
+#   mkdir -p .github/workflows && git mv docs/ci/github-actions-release.yml .github/workflows/release.yml
+#
+# Builds the downloads on GitHub's machines and attaches them to a GitHub Release:
+#   OxoFlow-mac-arm64.dmg  (Apple Silicon, macos-14 runner, scripts/build-mac.sh)
+#   OxoFlow-Setup.exe      (Windows x64, engine with PyInstaller + CUDA DLLs, NSIS installer)
+# Trigger: push a tag (git tag v1.4.0 && git push origin v1.4.0), or run it by hand
+# (Actions › release › Run workflow) to get the files as build artifacts only.
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5
+      - run: npm ci --no-audit --no-fund && node node_modules/electron/install.js
+      - run: sh scripts/build-mac.sh --dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: release/OxoFlow-mac-arm64.dmg
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Speech engine (PyInstaller + CUDA runtime)
+        run: |
+          pip install faster-whisper pyinstaller nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"
+          python stt/build_stt.py
+      - run: npm ci --no-audit --no-fund
+      - run: node node_modules/electron/install.js
+      - run: npm run build:native
+      - run: npm run release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: release/installer/OxoFlow-Setup.exe
+
+  publish:
+    needs: [mac, windows]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" OxoFlow-mac-arm64.dmg OxoFlow-Setup.exe \
+            --repo "$GITHUB_REPOSITORY" --title "OxoFlow $GITHUB_REF_NAME" \
+            --notes "Dictée vocale 100 % locale. Mac (Apple Silicon) : ouvre le .dmg et glisse OxoFlow dans Applications. Windows : lance OxoFlow-Setup.exe. Applications non signées : voir le README pour le premier lancement."

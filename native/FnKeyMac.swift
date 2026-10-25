@@ -42,6 +42,8 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
 
 guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
                                   eventsOfInterest: mask, callback: callback, userInfo: nil) else {
+    // Adds OxoFlow to Privacy & Security › Input Monitoring and asks the user (once).
+    _ = CGRequestListenEventAccess()
     say("denied")
     exit(2)
 }

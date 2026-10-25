@@ -5,7 +5,9 @@
 #   Contents/Resources/PasteHelperMac, FnKeyMac
 # The speech model is not bundled: the app downloads it on first start (or reuses
 # ~/Library/Application Support/OxoFlow/models).
-# Usage: npm run package:mac [-- --install]   (--install copies the app to /Applications)
+# Usage: npm run package:mac [-- --install] [-- --dmg]
+#   --install  copies the app to /Applications
+#   --dmg      also makes release/OxoFlow-mac-arm64.dmg (drag-to-Applications disk image)
 set -e
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
@@ -65,10 +67,19 @@ codesign --force --deep --sign - "$APP" 2>/dev/null
 codesign --verify --deep "$APP" && echo "   signature OK"
 du -sh "$APP" | awk '{print "   taille : " $1}'
 
-if [ "$1" = "--install" ]; then
-  rm -rf /Applications/OxoFlow.app
-  ditto "$APP" /Applications/OxoFlow.app
-  echo "Installé : /Applications/OxoFlow.app"
-else
-  echo "Prêt : $APP"
-fi
+for arg in "$@"; do
+  case "$arg" in
+    --install)
+      rm -rf /Applications/OxoFlow.app
+      ditto "$APP" /Applications/OxoFlow.app
+      echo "Installé : /Applications/OxoFlow.app" ;;
+    --dmg)
+      STAGE="$BUILD/dmg"; rm -rf "$STAGE"; mkdir -p "$STAGE"
+      ditto "$APP" "$STAGE/OxoFlow.app"
+      ln -s /Applications "$STAGE/Applications"
+      DMG="$ROOT/release/OxoFlow-mac-arm64.dmg"; rm -f "$DMG"
+      hdiutil create -quiet -volname "OxoFlow" -srcfolder "$STAGE" -fs HFS+ -format ULMO -ov "$DMG"
+      du -sh "$DMG" | awk '{print "Image disque : " $2 " (" $1 ")"}' ;;
+  esac
+done
+echo "Prêt : $APP"
