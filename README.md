@@ -7,11 +7,11 @@ Un raccourci, tu parles, le texte s'écrit là où se trouve ton curseur.<br>
 Gratuit, open source, sans compte, sans abonnement, et rien ne quitte ton PC.</p>
 
 <p align="center">
-  <a href="https://github.com/martinleonardcyber-ops/freeflow/releases/latest/download/OxoFlow-mac-arm64.dmg"><b>⬇ Mac (Apple Silicon)</b></a>
+  <a href="https://github.com/martinleonardcyber-ops/oxoflow/releases/latest/download/OxoFlow-mac-arm64.dmg"><b>⬇ Mac (Apple Silicon)</b></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/martinleonardcyber-ops/freeflow/releases/latest/download/OxoFlow-Setup.exe"><b>⬇ Windows</b></a>
+  <a href="https://github.com/martinleonardcyber-ops/oxoflow/releases/latest/download/OxoFlow-Setup.exe"><b>⬇ Windows</b></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/martinleonardcyber-ops/freeflow/releases">Toutes les versions</a>
+  <a href="https://github.com/martinleonardcyber-ops/oxoflow/releases">Toutes les versions</a>
 </p>
 
 <p align="center"><img src="docs/screenshots/hub-home.png" width="760" alt="L'accueil de OxoFlow"></p>
@@ -20,6 +20,8 @@ Gratuit, open source, sans compte, sans abonnement, et rien ne quitte ton PC.</p
 
 ## Ce que ça fait
 
+- **Un panneau dans la barre des menus** : un clic sur l'icône montre l'état, tes statistiques, des interrupteurs rapides, tes dictées récentes et un bouton « Dicter maintenant ».
+- **Un assistant au premier lancement** : micro, autorisations, touche fn, modèle et un premier essai, étape par étape.
 - **Dictée partout** : dans un mail, Notion, Slack, ChatGPT, VS Code… Appuie sur `Ctrl + Alt + Espace`, parle, appuie à nouveau : le texte est collé là où tu écris.
 - **Deux façons de dicter** : un appui pour démarrer puis un appui pour arrêter (mains libres), ou garder la touche enfoncée pendant que tu parles (push-to-talk). Le raccourci se change dans Paramètres (bouton *Enregistrer* puis *Confirmer*) ; les combinaisons de touches de modification seules marchent aussi (ex. `Ctrl + Win`).
 - **Transcription locale** : le modèle Whisper `large-v3` tourne sur ta carte graphique NVIDIA (moins d'une seconde pour 10 secondes de voix sur une RTX récente). Sans carte NVIDIA, OxoFlow passe tout seul sur le processeur avec un modèle plus léger.
@@ -47,7 +49,7 @@ Gratuit, open source, sans compte, sans abonnement, et rien ne quitte ton PC.</p
 
 ### Mac (Apple Silicon : M1 et plus récents)
 
-1. Télécharge **[OxoFlow-mac-arm64.dmg](https://github.com/martinleonardcyber-ops/freeflow/releases/latest/download/OxoFlow-mac-arm64.dmg)**, ouvre-le et glisse **OxoFlow** dans **Applications**.
+1. Télécharge **[OxoFlow-mac-arm64.dmg](https://github.com/martinleonardcyber-ops/oxoflow/releases/latest/download/OxoFlow-mac-arm64.dmg)**, ouvre-le et glisse **OxoFlow** dans **Applications**.
 2. L'app n'est pas signée par Apple (il faudrait un compte développeur payant) : au premier lancement, macOS refuse de l'ouvrir. Va dans *Réglages Système › Confidentialité et sécurité*, tout en bas, et clique sur **Ouvrir quand même**.
 3. Autorise OxoFlow dans *Accessibilité* (pour coller avec ⌘V) et, si `fn` ne réagit pas, dans *Surveillance de l'entrée* ; accepte l'accès au micro. La carte « Prêt à dicter » de l'accueil liste ce qui manque.
 4. Règle *Clavier › « Appuyer sur la touche 🌐 pour » : Ne rien faire*, puis maintiens **`fn`** et parle.
@@ -56,7 +58,7 @@ Au premier lancement, OxoFlow télécharge le modèle (**1,6 Go**, une seule foi
 
 ### Windows 10 / 11
 
-1. Télécharge **[OxoFlow-Setup.exe](https://github.com/martinleonardcyber-ops/freeflow/releases/latest/download/OxoFlow-Setup.exe)** et lance-le. L'installateur n'est pas signé numériquement : Windows affiche « Windows a protégé votre ordinateur », clique sur **Informations complémentaires**, puis **Exécuter quand même**.
+1. Télécharge **[OxoFlow-Setup.exe](https://github.com/martinleonardcyber-ops/oxoflow/releases/latest/download/OxoFlow-Setup.exe)** et lance-le. L'installateur n'est pas signé numériquement : Windows affiche « Windows a protégé votre ordinateur », clique sur **Informations complémentaires**, puis **Exécuter quand même**.
 2. Choisis le dossier (par défaut `%LOCALAPPDATA%\Programs\OxoFlow`, aucun droit administrateur demandé). Un raccourci est créé sur le bureau et dans le menu Démarrer.
 3. Au premier lancement, OxoFlow télécharge le modèle de reconnaissance vocale, **une seule fois** : environ **3 Go** avec une carte NVIDIA (`large-v3`), **0,5 Go** sans (`small`). Quand c'est écrit « prêt », appuie sur `Ctrl + Alt + Espace` et parle.
 
@@ -80,7 +82,7 @@ Avec moins de mémoire vidéo, OxoFlow essaie d'abord une version allégée du m
 Sur Mac, OxoFlow transcrit avec **MLX Whisper `large-v3-turbo` sur la puce graphique** (Metal) : environ 0,3 s pour 7 s de voix sur une puce M récente. Pas encore d'installateur `.app` : on le lance depuis le code source.
 
 ```bash
-git clone https://github.com/martinleonardcyber-ops/freeflow.git && cd freeflow
+git clone https://github.com/martinleonardcyber-ops/oxoflow.git && cd oxoflow
 npm run setup:mac    # Node, moteur Python (stt/.venv), collage Swift
 npm start
 ```
@@ -136,8 +138,8 @@ Paramètres Windows → Applications → OxoFlow → Désinstaller. Le modèle t
 Prérequis : Node.js 22, Python 3.11, et pour la version GPU les paquets `nvidia-cublas-cu12` et `nvidia-cudnn-cu12`.
 
 ```powershell
-git clone https://github.com/AlanECE/freeflow.git
-cd freeflow
+git clone https://github.com/martinleonardcyber-ops/oxoflow.git
+cd oxoflow
 npm install
 pip install faster-whisper pyinstaller nvidia-cublas-cu12 "nvidia-cudnn-cu12<10"
 npm run build:native    # native/PasteHelper.exe (collage simulé, csc.exe du .NET Framework 4)
