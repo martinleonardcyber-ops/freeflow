@@ -6,7 +6,13 @@
 Un raccourci, tu parles, le texte s'écrit là où se trouve ton curseur.<br>
 Gratuit, open source, sans compte, sans abonnement, et rien ne quitte ton PC.</p>
 
-<p align="center"><b>Windows :</b> pas encore d’installateur OxoFlow publié, construis-le avec <code>npm run release</code>. <b>Mac :</b> voir « Sur Mac » plus bas.</p>
+<p align="center">
+  <a href="https://github.com/martinleonardcyber-ops/freeflow/releases/latest/download/OxoFlow-mac-arm64.dmg"><b>⬇ Mac (Apple Silicon)</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/martinleonardcyber-ops/freeflow/releases/latest/download/OxoFlow-Setup.exe"><b>⬇ Windows</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/martinleonardcyber-ops/freeflow/releases">Toutes les versions</a>
+</p>
 
 <p align="center"><img src="docs/screenshots/hub-home.png" width="760" alt="L'accueil de OxoFlow"></p>
 
@@ -39,10 +45,22 @@ Gratuit, open source, sans compte, sans abonnement, et rien ne quitte ton PC.</p
 
 ## Installer
 
-1. Construis **OxoFlow-Setup.exe** sur un PC Windows (`npm run release`, voir « Construire » plus bas) : aucun installateur OxoFlow n’est encore publié.
-2. Lance-le. L'installateur n'est pas signé numériquement, Windows affiche donc « Windows a protégé votre ordinateur » : clique sur **Informations complémentaires**, puis **Exécuter quand même**.
-3. Choisis le dossier (par défaut `%LOCALAPPDATA%\Programs\OxoFlow`, aucun droit administrateur demandé). Un raccourci est créé sur le bureau et dans le menu Démarrer.
-4. Au premier lancement, OxoFlow télécharge le modèle de reconnaissance vocale depuis Hugging Face, **une seule fois** : environ **3 Go** avec une carte NVIDIA (`large-v3`), **0,5 Go** sans (`small`). La progression s'affiche dans la fenêtre et dans l'icône près de l'horloge. Quand c'est écrit « prêt », appuie sur `Ctrl + Alt + Espace` et parle.
+### Mac (Apple Silicon : M1 et plus récents)
+
+1. Télécharge **[OxoFlow-mac-arm64.dmg](https://github.com/martinleonardcyber-ops/freeflow/releases/latest/download/OxoFlow-mac-arm64.dmg)**, ouvre-le et glisse **OxoFlow** dans **Applications**.
+2. L'app n'est pas signée par Apple (il faudrait un compte développeur payant) : au premier lancement, macOS refuse de l'ouvrir. Va dans *Réglages Système › Confidentialité et sécurité*, tout en bas, et clique sur **Ouvrir quand même**.
+3. Autorise OxoFlow dans *Accessibilité* (pour coller avec ⌘V) et, si `fn` ne réagit pas, dans *Surveillance de l'entrée* ; accepte l'accès au micro. La carte « Prêt à dicter » de l'accueil liste ce qui manque.
+4. Règle *Clavier › « Appuyer sur la touche 🌐 pour » : Ne rien faire*, puis maintiens **`fn`** et parle.
+
+Au premier lancement, OxoFlow télécharge le modèle (**1,6 Go**, une seule fois).
+
+### Windows 10 / 11
+
+1. Télécharge **[OxoFlow-Setup.exe](https://github.com/martinleonardcyber-ops/freeflow/releases/latest/download/OxoFlow-Setup.exe)** et lance-le. L'installateur n'est pas signé numériquement : Windows affiche « Windows a protégé votre ordinateur », clique sur **Informations complémentaires**, puis **Exécuter quand même**.
+2. Choisis le dossier (par défaut `%LOCALAPPDATA%\Programs\OxoFlow`, aucun droit administrateur demandé). Un raccourci est créé sur le bureau et dans le menu Démarrer.
+3. Au premier lancement, OxoFlow télécharge le modèle de reconnaissance vocale, **une seule fois** : environ **3 Go** avec une carte NVIDIA (`large-v3`), **0,5 Go** sans (`small`). Quand c'est écrit « prêt », appuie sur `Ctrl + Alt + Espace` et parle.
+
+> La version Windows est fabriquée automatiquement par GitHub ; elle n'a pas encore été essayée sur un vrai PC. Les retours sont bienvenus dans les *Issues*.
 
 OxoFlow reste dans la zone de notification (près de l'horloge) : clic droit sur l'icône pour ouvrir la fenêtre, lancer une dictée ou quitter.
 
