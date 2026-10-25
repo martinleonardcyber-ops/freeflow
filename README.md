@@ -83,7 +83,7 @@ Il faut Node, Python 3.12 (ou `uv`) et les outils en ligne de commande Xcode (`x
 
 OxoFlow vit dans la **barre des menus** ; l'icône du Dock n'apparaît que quand la fenêtre est ouverte.
 
-**Comme Wispr Flow :** maintiens **`fn`**, parle, relâche : le texte s'écrit là où est ton curseur. Un appui bref sur `fn` passe en mains libres (re-tape `fn` pour finir). Règle d'abord *Réglages Système › Clavier › « Appuyer sur 🌐 pour » : Ne rien faire*, sinon macOS ouvre les emojis en même temps. La **barre Flow**, une petite capsule en bas de l'écran, rappelle le geste au survol et lance une dictée au clic. Un autre raccourci (ex. `⌃⌥Espace`) se règle dans Paramètres.
+**Comme Wispr Flow :** maintiens **`fn`**, parle, relâche : le texte s'écrit là où est ton curseur. Deux appuis rapides sur `fn` passent en mains libres (un appui pour finir) ; un appui isolé ne fait rien, pour éviter les dictées accidentelles. Règle d'abord *Réglages Système › Clavier › « Appuyer sur 🌐 pour » : Ne rien faire*, sinon macOS ouvre les emojis en même temps. La **barre Flow**, une petite capsule en bas de l'écran, rappelle le geste au survol et lance une dictée au clic. Un autre raccourci (ex. `⌃⌥Espace`) se règle dans Paramètres.
 
 ## Utiliser
 
@@ -91,7 +91,7 @@ OxoFlow vit dans la **barre des menus** ; l'icône du Dock n'apparaît que quand
 |---|---|
 | Dicter | `Ctrl + Alt + Espace`, parle, `Ctrl + Alt + Espace` |
 | Annuler | `Échap` pendant l'écoute |
-| Push-to-talk | Paramètres → *Maintenir pour parler* : garde la touche enfoncée, relâche pour transcrire. Un appui bref passe en mains libres |
+| Push-to-talk | Paramètres → *Maintenir pour parler* : garde la touche enfoncée, relâche pour transcrire. Deux appuis rapides passent en mains libres |
 | Changer le raccourci | Paramètres → Raccourci → *Enregistrer*, tape ta combinaison, *Confirmer* |
 | Langue | Paramètres → Langue : automatique, français ou anglais (forcer la langue aide sur les phrases très courtes) |
 | Ajouter un mot | Dictionnaire → le mot correct + ce que le modèle entend à la place, puis *Tester* |

@@ -54,7 +54,8 @@
   // ---- audio capture state
   let ctx = null, stream = null, source = null, node = null, sink = null, analyser = null;
   let chunks = [], total = 0, recording = false;
-  let skip = 0;   // samples to drop at the start: the start chime must not be transcribed
+  let skip = 0;   // samples to drop at the start: what is left of the start chime
+  let chimeAt = 0;
   let flushResolve = null;
 
   // ---- live spectrum
@@ -248,7 +249,10 @@
     sink.gain.value = 0; // worklet needs a path to the destination to keep processing
     source.connect(node).connect(sink).connect(ctx.destination);
     if (ctx.state !== 'running') await ctx.resume();
-    skip = soundsOn ? Math.round(ctx.sampleRate * 0.3) : 0;
+    // The chime lasts ~0.25 s and the microphone takes about as long to open:
+    // drop only what is left of it, not the speaker's first syllable.
+    const left = soundsOn ? Math.max(0, 0.26 - (performance.now() - chimeAt) / 1000) : 0;
+    skip = Math.round(ctx.sampleRate * left);
   }
 
   async function finishRecording() {
@@ -301,6 +305,7 @@
 
   window.freeflow.on('ff:rec-start', async (opts) => {
     soundsOn = !opts || opts.sounds !== false;
+    chimeAt = performance.now();
     chime([587, 880]);
     try {
       await startRecording(opts || {});

@@ -368,7 +368,7 @@
     pttInput.disabled = !pttOk;
     $('#mode-ptt-label').classList.toggle('disabled', !pttOk);
     $('#shortcut-fn').hidden = !MAC || s.shortcut === 'Fn' || sc.recording;
-    $('#ptt-hint').textContent = pttOk ? 'Garde la touche enfoncée ; un appui bref passe en mains libres.'
+    $('#ptt-hint').textContent = pttOk ? 'Garde la touche enfoncée pendant que tu parles ; deux appuis rapides passent en mains libres.'
       : MAC && state.accessibility === false ? 'Autorise OxoFlow dans Accessibilité, puis relance-le, pour l’activer.' : 'Indisponible : le module uiohook-napi n’a pas pu être chargé.';
     for (const seg of $$('.segmented')) {
       const v = s[seg.dataset.setting] || (seg.dataset.setting === 'theme' ? 'system' : 'auto');

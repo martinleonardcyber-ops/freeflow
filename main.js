@@ -381,7 +381,7 @@ function updateTray() {
 // What the idle Flow bar says on hover.
 function barHint() {
   const s = settings.get();
-  return { key: prettyShortcut(s.shortcut), text: s.mode === 'ptt' ? 'Maintiens pour dicter · ou clique ici' : 'Appuie pour dicter · ou clique ici' };
+  return { key: prettyShortcut(s.shortcut), text: s.mode === 'ptt' ? 'Maintiens pour dicter · double-tape pour mains libres' : 'Appuie pour dicter · ou clique ici' };
 }
 const flowBarOn = () => settings.get().flowBar !== false;
 
@@ -442,6 +442,14 @@ function startDictation(opts = {}) {
 function stopDictation() {
   if (dictation.phase !== 'listening') return false;
   clearTimeout(dictation.timer);
+  // If the audio or the engine never answers, do not stay stuck on "Transcription…".
+  dictation.timer = setTimeout(() => {
+    if (dictation.phase === 'transcribing' || dictation.phase === 'formatting') {
+      log('dictation: no result after 45 s, giving up');
+      setPhase('error', { message: 'Délai dépassé, réessaie' });
+      scheduleIdle(2000);
+    }
+  }, 45000);
   dictation.stoppedAt = Date.now();
   armEscape(false);
   setPhase('transcribing');
@@ -464,12 +472,15 @@ function toggleDictation(opts = {}) {
 }
 
 ipcMain.on('ff:audio-done', (_e, payload) => {
+  clearTimeout(dictation.timer);
   const pcm = Buffer.from(payload.pcm);
   const wav = pcm16ToWav(pcm, payload.sampleRate || 16000, 1);
   log(`audio: ${wavDurationMs(wav)} ms @ ${payload.sampleRate} Hz (${(wav.length / 1024).toFixed(0)} KiB)`);
-  if (wavDurationMs(wav) < 250) {
-    setPhase('error', { message: 'Rien entendu' });
-    scheduleIdle(1200);
+  if (wavDurationMs(wav) < 400) {
+    // Released before the microphone had anything: the gesture, not the voice, is the problem.
+    const s = settings.get();
+    setPhase('error', { message: s.mode === 'ptt' ? `Maintiens ${prettyShortcut(s.shortcut)} pendant que tu parles` : 'Rien entendu' });
+    scheduleIdle(1800);
     return;
   }
   runPipeline(wav, { toHub: dictation.toHub, noPaste: dictation.noPaste }).catch(() => {});
@@ -673,7 +684,15 @@ function onComboUp() {
   if (hook.mode === 'ptt') {
     if (dictation.phase !== 'listening') return;
     if (hook.spoiled && held < 700) { cancelDictation(); return; }   // e.g. Ctrl+Win+D: not a dictation
-    if (held < 300) { hook.handsFree = true; return; }                // tap = hands-free, like Wispr
+    if (held < 300) {
+      // A lone tap is usually an accident (old emoji habit, fn shortcuts): cancel.
+      // Two quick taps = hands-free; the second one keeps the dictation open.
+      const now = Date.now();
+      if (now - (hook.lastTapAt || 0) < 650) { hook.handsFree = true; hook.lastTapAt = 0; return; }
+      hook.lastTapAt = now;
+      cancelDictation();
+      return;
+    }
     stopDictation();
   } else if (!hook.spoiled) {
     toggleDictation();                                                // modifier-only chord fires on release
