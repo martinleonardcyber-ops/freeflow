@@ -1,8 +1,13 @@
-## OxoFlow 1.6.1
+## OxoFlow 1.6.2
 
 Dictée vocale 100 % locale : maintiens **fn** (Mac) ou appuie sur **Ctrl + Alt + Espace** (Windows), parle, le texte s'écrit là où est ton curseur. Tout tourne sur ta machine, rien n'est envoyé en ligne.
 
-### Nouveautés
+### Nouveautés de la 1.6.2
+
+- **Nouvelle icône** aux couleurs d'OxoFlow, sur Mac comme sur Windows.
+- **Fenêtre d'installation Mac soignée** : à l'ouverture du `.dmg`, il suffit de glisser OxoFlow sur le dossier Applications, comme indiqué par la flèche.
+
+### Déjà dans la 1.6
 
 - **Panneau dans la barre des menus** : un clic sur l'icône affiche l'état, tes statistiques du jour, des interrupteurs rapides (maintenir pour parler, collage, mise en forme IA, sons, barre Flow, langue), tes dictées récentes et un bouton « Dicter maintenant ». Clic droit : le menu classique.
 - **Assistant de premier lancement** : micro, autorisations, touche fn, téléchargement du modèle et un premier essai, étape par étape ; chaque étape se coche toute seule.
