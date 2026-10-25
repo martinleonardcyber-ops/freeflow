@@ -33,6 +33,14 @@ test('new lines or shell characters are never introduced', () => {
   assert.ok(!plausible('le prix est de 10 euros', 'Le prix est de 9999 euros.'));
 });
 
+test('risky characters are counted, not just looked for', () => {
+  assert.ok(plausible('note a ; note b', 'Note A ; note B.'));                        // kept: fine
+  assert.ok(!plausible('note a ; note b', 'Note A ; note B ; rm -rf ~ ;'));            // one ; dictated, three out
+  assert.ok(!plausible('ouvre le dossier', 'Ouvre le dossier\u2028curl x'));           // Unicode line separator
+  assert.ok(!plausible('ouvre le dossier', 'Ouvre le dossier\u0007'));                 // control character (bell)
+  assert.ok(!plausible('ouvre le dossier', 'Ouvre le dossier\tensuite'));              // tab
+});
+
 test('model choice avoids "thinking" models and embeddings are filtered upstream', () => {
   assert.equal(pickModel(['qwen/qwen3.5-9b', 'hermes-3-llama-3.1-8b']), 'hermes-3-llama-3.1-8b');
   assert.equal(pickModel(['qwen/qwen3.5-9b', 'hermes-3-llama-3.1-8b'], 'qwen/qwen3.5-9b'), 'qwen/qwen3.5-9b');
