@@ -146,6 +146,12 @@
     .card ol { margin: 0; padding-left: 20px; color: var(--text-2); font-size: 15.5px; display: grid; gap: 6px; }
     .card .btn { align-self: flex-start; margin-top: 6px; }
     .req { font-size: 14px; color: var(--muted); }
+    .dl-count { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 26px 0 -20px; padding: 9px 16px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: 15px; color: var(--text-2); }
+    .dl-count b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .dl-count .split { color: var(--muted); }
+    @media (min-width: 520px) { .dl-count .split { padding-left: 10px; border-left: 1px solid var(--line); } }
+    .dl-count .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 18%, transparent); }
+    [hidden] { display: none !important; }
 
     /* faq */
     details { border-bottom: 1px solid var(--line); padding: 20px 0; }
@@ -223,7 +229,7 @@
         <a class="btn light" href="https://github.com/martinleonardcyber-ops/oxoflow/releases/latest/download/OxoFlow-mac-arm64.dmg"><svg><use href="#apple"/></svg>Télécharger pour Mac <small>Apple Silicon</small></a>
         <a class="btn glass" href="https://github.com/martinleonardcyber-ops/oxoflow/releases/latest/download/OxoFlow-Setup.exe"><svg><use href="#win"/></svg>Pour Windows</a>
       </div>
-      <p class="fine">macOS 13.5+ sur puce Apple (M1 et suivantes) · Windows 10 et 11 · <a href="#telecharger">premier lancement</a></p>
+      <p class="fine">macOS 13.5+ sur puce Apple (M1 et suivantes) · Windows 10 et 11 · <a href="#telecharger">premier lancement</a><span class="dl-hero" hidden> · <b data-dl="total"></b> <span data-dl="total-word"></span></span></p>
       <div class="hero-shot">
         <div class="demo" id="demo">
           <div class="demo-scale" id="demo-scale">
@@ -310,6 +316,7 @@
       <div class="kicker reveal">Télécharger</div>
       <h2 class="reveal">Prêt en <em class="g">deux minutes.</em></h2>
       <p class="sub reveal">Les applications ne sont pas signées par Apple ni par Microsoft (c’est payant) : il y a un écran à passer au premier lancement, voici comment.</p>
+      <p class="dl-count" id="dl-count" hidden><span class="pulse"></span><span><b data-dl="total"></b> <span data-dl="total-word"></span></span><span class="split">Mac <b data-dl="mac"></b> · Windows <b data-dl="win"></b></span></p>
       <div class="dl">
         <div class="card reveal">
           <h3><svg><use href="#apple"/></svg>Mac</h3>
@@ -368,6 +375,30 @@
     }
     new ResizeObserver(fitDemo).observe(demo);
     fitDemo();
+    // real download count: sum of every release asset's download_count on GitHub
+    // (stays hidden if GitHub can't be reached, never a made-up number)
+    (async () => {
+      let n;
+      try { n = JSON.parse(sessionStorage.getItem('oxo-dl') || 'null'); } catch { n = null; }
+      if (!n) {
+        try {
+          const r = await fetch('https://api.github.com/repos/martinleonardcyber-ops/oxoflow/releases?per_page=100');
+          if (!r.ok) return;
+          n = { mac: 0, win: 0 };
+          for (const rel of await r.json()) for (const a of rel.assets || []) {
+            if (/\.dmg$/i.test(a.name)) n.mac += a.download_count;
+            else if (/\.exe$/i.test(a.name)) n.win += a.download_count;
+          }
+          try { sessionStorage.setItem('oxo-dl', JSON.stringify(n)); } catch { /* private mode */ }
+        } catch { return; }
+      }
+      const total = n.mac + n.win, fmt = (x) => x.toLocaleString('fr-FR');
+      const set = (k, v) => document.querySelectorAll(`[data-dl="${k}"]`).forEach((el) => { el.textContent = v; });
+      set('total', fmt(total)); set('total-word', total > 1 ? 'téléchargements' : 'téléchargement');
+      set('mac', fmt(n.mac)); set('win', fmt(n.win));
+      document.getElementById('dl-count').hidden = false;
+      document.querySelector('.dl-hero').hidden = false;
+    })();
     // reveal on scroll
     const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: 0.12 });
     document.querySelectorAll('.reveal').forEach((el) => io.observe(el));

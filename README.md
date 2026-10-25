@@ -7,6 +7,11 @@ Un raccourci, tu parles, le texte s'écrit là où se trouve ton curseur.<br>
 Gratuit, open source, sans compte, sans abonnement, et rien ne quitte ton PC.</p>
 
 <p align="center">
+  <a href="https://github.com/martinleonardcyber-ops/oxoflow/releases"><img src="https://img.shields.io/github/downloads/martinleonardcyber-ops/oxoflow/total?label=t%C3%A9l%C3%A9chargements&color=8b6cff" alt="Nombre de téléchargements"></a>
+  <a href="https://github.com/martinleonardcyber-ops/oxoflow/releases/latest"><img src="https://img.shields.io/github/v/release/martinleonardcyber-ops/oxoflow?label=version&color=ff7a59" alt="Dernière version"></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/martinleonardcyber-ops/oxoflow/releases/latest/download/OxoFlow-mac-arm64.dmg"><b>⬇ Mac (Apple Silicon)</b></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/martinleonardcyber-ops/oxoflow/releases/latest/download/OxoFlow-Setup.exe"><b>⬇ Windows</b></a>
