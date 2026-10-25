@@ -12,6 +12,8 @@ Gratuit, open source, sans compte, sans abonnement, et rien ne quitte ton PC.</p
   <a href="https://github.com/martinleonardcyber-ops/oxoflow/releases/latest/download/OxoFlow-Setup.exe"><b>⬇ Windows</b></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/martinleonardcyber-ops/oxoflow/releases">Toutes les versions</a>
+  &nbsp;·&nbsp;
+  <a href="https://oxoflow.vercel.app"><b>Le site</b></a>
 </p>
 
 <p align="center"><img src="docs/screenshots/hub-home.png" width="760" alt="L'accueil de OxoFlow"></p>
